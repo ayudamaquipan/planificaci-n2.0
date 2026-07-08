@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Portal del Planificador Unificado</title>
     
-    <!-- Enlace al archivo de estilos externo (aquí va todo lo que antes estaba en <style>) -->
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -17,7 +16,7 @@
                 <label for="email">Correo Electrónico</label>
                 <input type="email" id="email" required>
                 <label for="password">Contraseña</label>
-                <input type="password" id="password" required>
+                <input type="password" id="password" autocomplete="current-password" required>
                 <button type="submit" style="margin-top: 1rem;">Acceder</button>
             </form>
             <p id="error-message"></p>
@@ -84,14 +83,14 @@
                         </div>
                         
                         <div>
-                            <label> </label>
+                            <label>&nbsp;</label>
                             <button id="abrir-modal-masivo" class="icon-btn" style="width: 100%; justify-content: center;">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M14 8a1 1 0 0 1-1 1H9v4a1 1 0 0 1-2 0V9H3a1 1 0 0 1 0-2h4V3a1 1 0 0 1 2 0v4h4a1 1 0 0 1 1 1z"/></svg>
                                     Masivo
                             </button>
                         </div>
-                            <div>
-                            <label> </label>
+                        <div>
+                            <label>&nbsp;</label>
                             <button id="exportar-csv" class="icon-btn" style="width: 100%; justify-content: center;">
                                     <svg width="16" height="16" fill="currentColor" viewBox="0 0 20 20"><path d="M14.707 7.293a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L9 10.586V3a1 1 0 112 0v7.586l2.707-2.707a1 1 0 011.414 0zM4 14a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1z"></path></svg>
                                     CSV
@@ -112,7 +111,8 @@
                                 <th data-sort="cliente">Cliente<span class="sort-indicator"></span></th>
                                 <th data-sort="direccion">Dirección Completa<span class="sort-indicator"></span></th>
                                 <th data-sort="tipoServicio">Tipo Servicio<span class="sort-indicator"></span></th>
-                                <th data-sort="timestamp">Fecha Creación<span class="sort-indicator"></span></th> <th>Tiene Rep.</th>
+                                <th data-sort="timestamp">Fecha Creación<span class="sort-indicator"></span></th> 
+                                <th>Tiene Rep.</th>
                                 <th>Rep. Desp.</th>
                                 <th>Fecha Asignada</th>
                                 <th>H. Traslado</th>
@@ -250,7 +250,6 @@
         </div>
     </div>
 
-    <!-- Script enlazado que contiene toda tu lógica JavaScript modernizada -->
     <script type="module" src="app.js"></script>
 
 </body>
