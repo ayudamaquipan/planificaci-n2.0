@@ -1,256 +1,246 @@
-<!DOCTYPE html>
-<html lang="es" data-theme="dark">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Portal del Planificador Unificado</title>
+// =====================================================================
+// 1. IMPORTACIONES MODULARES (Firebase v10)
+// =====================================================================
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+import { 
+    initializeFirestore, persistentLocalCache, persistentMultipleTabManager, 
+    collection, query, orderBy, limit, startAfter, onSnapshot 
+} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { 
+    getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut 
+} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+
+// =====================================================================
+// 2. CONFIGURACIÓN E INICIALIZACIÓN DE FIREBASE
+// =====================================================================
+const firebaseConfig = {
+    apiKey: "AIzaSyA9tUGGmMqk85Hljw8H1XoTfX2U5iQu85c",
+    authDomain: "control-de-servicios-b8e34.firebaseapp.com",
+    projectId: "control-de-servicios-b8e34",
+    storageBucket: "control-de-servicios-b8e34.firebasestorage.app",
+    messagingSenderId: "28935045448",
+    appId: "1:28935045448:web:cf61d09b606951f000b37d",
+    measurementId: "G-FSCT1H3VJJ"
+};
+
+// Inicializar la App
+const app = initializeApp(firebaseConfig);
+
+// Inicializar Firestore con la nueva caché local optimizada (Elimina el Warning anterior)
+const db = initializeFirestore(app, {
+    localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager()
+    })
+});
+
+// Inicializar Autenticación
+const auth = getAuth(app);
+
+
+// =====================================================================
+// 3. LÓGICA DE AUTENTICACIÓN (LOGIN / LOGOUT)
+// =====================================================================
+const loginContainer = document.getElementById('login-container');
+const mainContent = document.getElementById('main-content');
+const loginForm = document.getElementById('login-form');
+const logoutBtn = document.getElementById('logout-button');
+const errorMessage = document.getElementById('error-message');
+
+// Escuchar cambios de estado (Verifica si hay alguien logueado)
+onAuthStateChanged(auth, (user) => {
+    if (user) {
+        // Usuario logueado: Ocultar login, mostrar portal y cargar datos
+        console.log("Usuario autenticado:", user.email);
+        if(loginContainer) loginContainer.style.display = 'none';
+        if(mainContent) mainContent.style.display = 'block';
+        
+        cargarRequerimientos(); // Ahora sí tenemos permisos para leer
+    } else {
+        // Sin sesión: Mostrar login, ocultar portal
+        console.log("Esperando inicio de sesión...");
+        if(loginContainer) loginContainer.style.display = 'flex';
+        if(mainContent) mainContent.style.display = 'none';
+    }
+});
+
+// Evento para el Formulario de Acceso
+if (loginForm) {
+    loginForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+        
+        signInWithEmailAndPassword(auth, email, password)
+            .then(() => {
+                if(errorMessage) errorMessage.innerText = '';
+            })
+            .catch((error) => {
+                console.error("Error en login:", error);
+                if(errorMessage) {
+                    errorMessage.innerText = "Error: Credenciales incorrectas o usuario no encontrado.";
+                    errorMessage.style.color = "#ff4d4d"; // Rojo suave para modo oscuro
+                }
+            });
+    });
+}
+
+// Evento para Cerrar Sesión
+if (logoutBtn) {
+    logoutBtn.addEventListener('click', () => {
+        signOut(auth).then(() => {
+            console.log("Sesión cerrada correctamente.");
+            // Al cerrar, el onAuthStateChanged automáticamente lo mandará al Login
+        }).catch((error) => {
+            console.error("Error al cerrar sesión:", error);
+        });
+    });
+}
+
+
+// =====================================================================
+// 4. MEJORA: DEBOUNCE Y BUSCADOR LOCAL
+// =====================================================================
+function debounce(func, espera) {
+    let timeout;
+    return function ejecutandoFuncion(...args) {
+        const masTarde = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(masTarde, espera);
+    };
+}
+
+const inputBusqueda = document.getElementById('filtro-busqueda');
+if (inputBusqueda) {
+    inputBusqueda.addEventListener('input', debounce((e) => {
+        const termino = e.target.value.toLowerCase();
+        const filas = document.querySelectorAll('#tabla-servicios tr');
+        
+        // Filtra visualmente la tabla sin volver a descargar datos de internet
+        filas.forEach(fila => {
+            const textoFila = fila.innerText.toLowerCase();
+            if (textoFila.includes(termino)) {
+                fila.style.display = '';
+            } else {
+                fila.style.display = 'none';
+            }
+        });
+    }, 300));
+}
+
+
+// =====================================================================
+// 5. CARGA Y RENDERIZADO DE DATOS (TABLA DE SERVICIOS)
+// =====================================================================
+let ultimoDocVisible = null;
+let desuscribirCarga = null; // Variable para detener escuchas duplicadas
+
+function renderizarTabla(listaRequerimientos) {
+    const tbody = document.getElementById('tabla-servicios');
+    if (!tbody) return;
     
-    <link rel="stylesheet" href="styles.css">
-</head>
-<body>
+    tbody.innerHTML = ''; 
+    const fragmento = document.createDocumentFragment();
 
-    <div id="login-container">
-        <div class="card login-card">
-            <h2>Acceso de Planificador</h2>
-            <form id="login-form">
-                <label for="email">Correo Electrónico</label>
-                <input type="email" id="email" required>
-                <label for="password">Contraseña</label>
-                <input type="password" id="password" autocomplete="current-password" required>
-                <button type="submit" style="margin-top: 1rem;">Acceder</button>
-            </form>
-            <p id="error-message"></p>
-        </div>
-    </div>
+    listaRequerimientos.forEach(req => {
+        const tr = document.createElement('tr');
+        
+        // Convertimos el estado en una clase válida (ej. "En Proceso" -> "en-proceso")
+        const claseEstado = req.estado ? req.estado.toLowerCase().replace(/ /g, '-') : 'na';
+        
+        // Formateo de fecha seguro
+        let fechaSolicitud = '';
+        if (req.timestamp) {
+            fechaSolicitud = typeof req.timestamp.toDate === 'function' 
+                ? req.timestamp.toDate().toLocaleDateString() 
+                : new Date(req.timestamp).toLocaleDateString();
+        }
 
-    <div id="main-content" style="display: none;">
-        <div class="container">
-             <div class="header-controls">
-                <h1 id="header-title">Portal del Planificador</h1>
-                <div class="action-buttons">
-                    <div class="notification-bell">
-                        <button id="notif-bell-btn" aria-label="Notificaciones">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
-                        </button>
-                        <span id="notif-count"></span>
-                        <div id="notif-panel"></div>
-                    </div>
-                    <button id="logout-button" class="icon-btn logout">Cerrar Sesión</button>
-                    <div class="theme-switch-wrapper">
-                        <label class="theme-switch">
-                            <input type="checkbox" id="theme-toggle">
-                            <span class="slider"></span>
-                        </label>
-                    </div>
-                </div>
-            </div>
+        tr.innerHTML = `
+            <td>${req.numRequerimiento || ''}</td>
+            <td>${req.numNV || ''}</td>
+            <td class="cliente-cell">${req.cliente || ''}</td>
+            <td>${req.direccion || ''}</td>
+            <td>${req.tipoServicio || ''}</td>
+            <td>${fechaSolicitud}</td>
+            <td>${req.tieneRepuestos || ''}</td>
+            <td>${req.repuestosDespachados || ''}</td>
+            <td>${req.fechaAsignada || ''}</td>
+            <td>${req.horaTraslado || ''}</td>
+            <td>${req.horaInicio || ''}</td>
+            <td>${req.horaTermino || ''}</td>
+            <td>${(req.tecnicos || []).join(', ') || ''}</td>
+            <td>
+                <span class="status-badge badge-${claseEstado}">
+                    ${req.estado || 'N/A'}
+                </span>
+            </td>
+            <td class="action-cell">
+                <button class="icon-btn" onclick="abrirModalServicio('${req.id}')">✏️ Editar</button>
+            </td>
+        `;
+        
+        fragmento.appendChild(tr);
+    });
 
-            <div class="card">
-                <div class="filter-header" id="toggle-filters-btn">
-                    <h2>🛠 Filtros y Controles</h2>
-                    <span class="toggle-icon">▼</span>
-                </div>
-            
-                <div id="filter-wrapper">
-                    <div class="filtros-container">
-                        <div>
-                            <label for="filtro-busqueda">Buscar</label>
-                            <input type="text" id="filtro-busqueda" placeholder="Nº Req, Cliente, etc.">
-                        </div>
-                        <div>
-                            <label for="filtro-estado">Filtrar por estado</label>
-                            <select id="filtro-estado">
-                                <option value="todos">Todos</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label for="filtro-vendedor">Filtrar por vendedor</label>
-                            <select id="filtro-vendedor">
-                                <option value="todos">Todos</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label for="filtro-tipo-servicio">Filtrar por Tipo Servicio</label>
-                            <select id="filtro-tipo-servicio">
-                                <option value="todos">Todos</option>
-                            </select>
-                        </div>
-                         <div>
-                            <label for="filtro-tecnico">Filtrar por Técnico</label>
-                            <select id="filtro-tecnico">
-                                <option value="todos">Todos</option>
-                            </select>
-                        </div>
-                        
-                        <div>
-                            <label>&nbsp;</label>
-                            <button id="abrir-modal-masivo" class="icon-btn" style="width: 100%; justify-content: center;">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M14 8a1 1 0 0 1-1 1H9v4a1 1 0 0 1-2 0V9H3a1 1 0 0 1 0-2h4V3a1 1 0 0 1 2 0v4h4a1 1 0 0 1 1 1z"/></svg>
-                                    Masivo
-                            </button>
-                        </div>
-                        <div>
-                            <label>&nbsp;</label>
-                            <button id="exportar-csv" class="icon-btn" style="width: 100%; justify-content: center;">
-                                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 20 20"><path d="M14.707 7.293a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L9 10.586V3a1 1 0 112 0v7.586l2.707-2.707a1 1 0 011.414 0zM4 14a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1z"></path></svg>
-                                    CSV
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
+    tbody.appendChild(fragmento);
+}
 
-            <div class="card">
-                 <h2>Servicios Registrados</h2>
-                 <div class="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th data-sort="numRequerimiento">Nº Req.<span class="sort-indicator"></span></th>
-                                <th data-sort="numNV">Nº NV<span class="sort-indicator"></span></th>
-                                <th data-sort="cliente">Cliente<span class="sort-indicator"></span></th>
-                                <th data-sort="direccion">Dirección Completa<span class="sort-indicator"></span></th>
-                                <th data-sort="tipoServicio">Tipo Servicio<span class="sort-indicator"></span></th>
-                                <th data-sort="timestamp">Fecha Creación<span class="sort-indicator"></span></th> 
-                                <th>Tiene Rep.</th>
-                                <th>Rep. Desp.</th>
-                                <th>Fecha Asignada</th>
-                                <th>H. Traslado</th>
-                                <th>H. Inicio</th>
-                                <th>H. Término</th>
-                                <th>Técnico(s)</th>
-                                <th>Estado</th>
-                                <th>Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody id="tabla-servicios"></tbody>
-                    </table>
-                </div>
-                <div class="table-footer">
-                    <span id="results-info"></span>
-                    <div id="pagination-controls" class="pagination-controls"></div>
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <div class="modal-overlay" id="service-modal">
-        <div class="modal-container">
-            <div class="modal-header">
-                <h2 id="modal-title-req-num">Servicio: Req #<span id="modal-req-num-display"></span></h2>
-                <button class="modal-close-btn" data-modal-id="service-modal">×</button>
-            </div>
-            
-            <div class="modal-body">
-                <div class="modal-details-section">
-                    <div class="detail-grid">
-                        <div class="detail-item"><strong>Nº Req:</strong> <input type="text" id="modal-numRequerimiento-input" data-field="numRequerimiento"></div>
-                        <div class="detail-item"><strong>Nº NV:</strong> <input type="text" id="modal-numNV-input" data-field="numNV"></div>
-                        <div class="detail-item"><strong>Cliente:</strong> <input type="text" id="modal-cliente-input" data-field="cliente"></div>
-                        <div class="detail-item">
-                            <strong>Monto Servicio:</strong>
-                            <div class="currency-input"><input type="text" id="modal-montoServicio-input" data-field="montoServicio" onkeyup="formatCurrency(this)"></div>
-                        </div>
-                        <div class="detail-item">
-                            <strong>Tipo Servicio:</strong>
-                            <select id="modal-tipoServicio-select" data-field="tipoServicio"><option value="">Seleccione un tipo</option></select>
-                        </div>
-                        
-                        <div class="detail-item">
-                            <strong>Región:</strong>
-                            <select id="modal-region-select" data-field="region"><option value="">Seleccione Región</option></select>
-                        </div>
-                        <div class="detail-item">
-                            <strong>Comuna:</strong>
-                            <select id="modal-comuna-select" data-field="comuna"><option value="">Seleccione Comuna</option></select>
-                        </div>
-                        <div class="detail-item full-width"><strong>Dirección (Calle/Núm):</strong> <input type="text" id="modal-direccion-input" data-field="direccion"></div>
-                        <div class="detail-item"><strong>Vendedor:</strong> <input type="email" id="modal-vendedor-input" data-field="vendedor"></div>
-                        <div class="detail-item"><strong>Contacto:</strong> <input type="text" id="modal-contacto-input" data-field="nomContacto"></div>
-                        <div class="detail-item"><strong>Teléfono:</strong> <input type="text" id="modal-telefono-input" data-field="numContacto"></div>
-                        <div class="detail-item">
-                            <strong>Tiene Repuestos:</strong>
-                            <select id="modal-tieneRepuestos-select" data-field="tieneRepuestos">
-                                <option value="Sí">Sí</option><option value="No">No</option><option value="N/A">N/A</option>
-                            </select>
-                        </div>
-                        <div class="detail-item">
-                            <strong>Repuestos Despachados:</strong>
-                            <select id="modal-repDespachados-select" data-field="repuestosDespachados">
-                                <option value="Sí">Sí</option><option value="No">No</option><option value="N/A">N/A</option>
-                            </select>
-                        </div>
-                        <div class="detail-item"><strong>Fecha Asignada:</strong> <span id="modal-fechaAsignada"></span></div>
-                        <div class="detail-item"><strong>Hora Traslado:</strong> <span id="modal-horaTraslado"></span></div>
-                        <div class="detail-item"><strong>Hora Inicio:</strong> <span id="modal-horaInicio"></span></div>
-                        <div class="detail-item"><strong>Hora Término:</strong> <span id="modal-horaTermino"></span></div>
-                        <div class="detail-item"><strong>Técnico(s) Asignado(s):</strong> <span id="modal-tecnico"></span></div>
-                        <div class="detail-item"><strong>Estado Actual:</strong> <span id="modal-estado"></span></div>
-                        <div class="detail-item full-width">
-                            <strong>Info. Servicio:</strong>
-                            <textarea id="modal-info-servicio-textarea" rows="3" data-field="infoServicio"></textarea>
-                        </div>
-                        <div class="detail-item"><strong>Fecha Creación:</strong> <span id="modal-fecha-solicitud"></span></div>
-                        <div class="detail-item"><strong>Última Edición:</strong> <span id="modal-fecha-edicion"></span></div>
-                        <div class="detail-item full-width">
-                            <strong>Observaciones de Planificación:</strong>
-                            <textarea id="modal-observaciones" rows="3" data-field="observacionesPlanificacion"></textarea>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-chat-section">
-                    <h4>Chat del Servicio</h4>
-                    <div id="modal-chat-history"></div>
-                    <form id="modal-chat-form">
-                        <input type="text" id="modal-chat-input" placeholder="Escribe un mensaje..." required>
-                        <button type="submit" aria-label="Enviar mensaje">Enviar</button>
-                    </form>
-                </div>
-            </div>
-            
-            <div class="modal-footer">
-                <button id="modal-guardar-btn">Guardar Cambios</button>
-            </div>
-        </div>
-    </div>
-    
-    <div class="modal-overlay" id="tecnico-select-modal">
-        <div class="modal-container">
-            <div class="modal-header">
-                <h2>Seleccionar Técnicos</h2>
-                <button class="modal-close-btn" data-modal-id="tecnico-select-modal">×</button>
-            </div>
-            <div class="modal-content">
-                <div id="tecnico-list"></div>
-            </div>
-            <div class="modal-footer">
-                <button id="tecnico-modal-cancelar-btn">Cancelar</button>
-                <button id="tecnico-modal-guardar-btn" style="background-color: var(--success);">Confirmar Selección</button>
-            </div>
-        </div>
-    </div>
+function cargarRequerimientos(paginaSiguiente = false) {
+    const referencia = collection(db, "requerimientos");
+    let consulta = query(referencia, orderBy("timestamp", "desc"), limit(50));
 
-    <div class="modal-overlay" id="bulk-add-modal">
-        <div class="modal-container">
-            <div class="modal-header">
-                <h2>Agregar Servicios por Copiar y Pegar</h2>
-                <button class="modal-close-btn" data-modal-id="bulk-add-modal">×</button>
-            </div>
-            <div class="modal-content">
-                <label for="bulk-paste-area">Pega aquí los datos desde tu planilla (Excel, Google Sheets)</label>
-                <p style="font-size: 0.85rem; color: var(--text-secondary); margin-top: -0.5rem; margin-bottom: 1rem;">
-                    Asegúrate de que las columnas estén en el siguiente orden: <br>
-                    <strong>Nº Req</strong> | <strong>Nº NV</strong> | <strong>Cliente</strong> | <strong>Monto Servicio</strong> | <strong>Tipo Servicio</strong> | <strong>Vendedor (email)</strong> | <strong>Fecha Asignada</strong> | <strong>H. Traslado</strong> | <strong>H. Inicio</strong> | <strong>H. Termino</strong> | <strong>Técnico(s)</strong> | <strong>Info. Servicio</strong>
-                </p>
-                <textarea id="bulk-paste-area" rows="10" placeholder="Columna 1	Columna 2	Columna 3	..."></textarea>
-            </div>
-            <div class="modal-footer">
-                <button id="bulk-add-save-btn" style="background-color: var(--success);">Procesar y Guardar Servicios</button>
-            </div>
-        </div>
-    </div>
+    if (paginaSiguiente && ultimoDocVisible) {
+        consulta = query(referencia, orderBy("timestamp", "desc"), startAfter(ultimoDocVisible), limit(50));
+    }
 
-    <script type="module" src="app.js"></script>
+    // Si ya había una consulta en vivo, la detenemos para no duplicar datos
+    if (desuscribirCarga) {
+        desuscribirCarga();
+    }
 
-</body>
-</html>
+    // onSnapshot mantiene la tabla actualizada en tiempo real
+    desuscribirCarga = onSnapshot(consulta, (snapshot) => {
+        const datos = [];
+        
+        if (!snapshot.empty) {
+            ultimoDocVisible = snapshot.docs[snapshot.docs.length - 1];
+            snapshot.forEach((doc) => {
+                datos.push({ id: doc.id, ...doc.data() });
+            });
+        }
+        
+        renderizarTabla(datos);
+        
+        const resultsInfo = document.getElementById('results-info');
+        if(resultsInfo) resultsInfo.innerText = `Mostrando ${datos.length} servicios en esta página`;
+        
+    }, (error) => {
+        console.error("Error al obtener los documentos:", error);
+    });
+}
+
+
+// =====================================================================
+// 6. CONTROL DE VENTANAS MODALES
+// =====================================================================
+// Exponer la función de abrir modal al entorno global para el botón "Editar"
+window.abrirModalServicio = function(id) {
+    console.log("Abrir detalles del requerimiento ID:", id);
+    const modal = document.getElementById('service-modal');
+    if(modal) {
+        // Aquí deberás colocar tu lógica para rellenar los datos del modal usando el 'id'
+        modal.style.display = 'flex';
+    }
+};
+
+// Cerrar cualquier modal al hacer clic en la (X)
+document.querySelectorAll('.modal-close-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+        const modalId = e.target.getAttribute('data-modal-id');
+        const modal = document.getElementById(modalId);
+        if (modal) modal.style.display = 'none';
+    });
+});
