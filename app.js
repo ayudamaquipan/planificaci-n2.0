@@ -90,7 +90,7 @@ document.getElementById('abrir-modal-masivo')?.addEventListener('click', () => {
 function cargarRequerimientos() {
     // ⚠️ REVISA ESTO: Si en tu Firebase la colección se llama distinto, 
     // cambia la palabra "requerimientos" por el nombre real.
-    const referencia = collection(db, "requerimientos");
+    const referencia = collection(db, "servicios");
     
     // Quitamos el orderBy("timestamp") para evitar que Firestore esconda 
     // los registros que no tienen fecha.
