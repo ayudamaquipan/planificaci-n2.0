@@ -4,14 +4,14 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { 
     initializeFirestore, persistentLocalCache, persistentMultipleTabManager, 
-    collection, query, orderBy, limit, startAfter, onSnapshot 
+    collection, query, orderBy, limit, onSnapshot 
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { 
     getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut 
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
 // =====================================================================
-// 2. CONFIGURACIÓN E INICIALIZACIÓN DE FIREBASE
+// 2. CONFIGURACIÓN FIREBASE
 // =====================================================================
 const firebaseConfig = {
     apiKey: "AIzaSyA9tUGGmMqk85Hljw8H1XoTfX2U5iQu85c",
@@ -23,134 +23,102 @@ const firebaseConfig = {
     measurementId: "G-FSCT1H3VJJ"
 };
 
-// Inicializar la App
 const app = initializeApp(firebaseConfig);
-
-// Inicializar Firestore con la nueva caché local optimizada (Elimina el Warning anterior)
 const db = initializeFirestore(app, {
-    localCache: persistentLocalCache({
-        tabManager: persistentMultipleTabManager()
-    })
+    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
 });
-
-// Inicializar Autenticación
 const auth = getAuth(app);
 
+// Variables globales para los datos
+let todosLosRequerimientos = [];
 
 // =====================================================================
-// 3. LÓGICA DE AUTENTICACIÓN (LOGIN / LOGOUT)
+// 3. AUTENTICACIÓN
 // =====================================================================
-const loginContainer = document.getElementById('login-container');
-const mainContent = document.getElementById('main-content');
-const loginForm = document.getElementById('login-form');
-const logoutBtn = document.getElementById('logout-button');
-const errorMessage = document.getElementById('error-message');
-
-// Escuchar cambios de estado (Verifica si hay alguien logueado)
 onAuthStateChanged(auth, (user) => {
     if (user) {
-        // Usuario logueado: Ocultar login, mostrar portal y cargar datos
-        console.log("Usuario autenticado:", user.email);
-        if(loginContainer) loginContainer.style.display = 'none';
-        if(mainContent) mainContent.style.display = 'block';
-        
-        cargarRequerimientos(); // Ahora sí tenemos permisos para leer
+        document.getElementById('login-container').style.display = 'none';
+        document.getElementById('main-content').style.display = 'block';
+        cargarRequerimientos();
     } else {
-        // Sin sesión: Mostrar login, ocultar portal
-        console.log("Esperando inicio de sesión...");
-        if(loginContainer) loginContainer.style.display = 'flex';
-        if(mainContent) mainContent.style.display = 'none';
+        document.getElementById('login-container').style.display = 'flex';
+        document.getElementById('main-content').style.display = 'none';
     }
 });
 
-// Evento para el Formulario de Acceso
-if (loginForm) {
-    loginForm.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const email = document.getElementById('email').value;
-        const password = document.getElementById('password').value;
-        
-        signInWithEmailAndPassword(auth, email, password)
-            .then(() => {
-                if(errorMessage) errorMessage.innerText = '';
-            })
-            .catch((error) => {
-                console.error("Error en login:", error);
-                if(errorMessage) {
-                    errorMessage.innerText = "Error: Credenciales incorrectas o usuario no encontrado.";
-                    errorMessage.style.color = "#ff4d4d"; // Rojo suave para modo oscuro
-                }
-            });
+document.getElementById('login-form')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
+    signInWithEmailAndPassword(auth, email, password).catch(error => {
+        const errorMsg = document.getElementById('error-message');
+        if(errorMsg) {
+            errorMsg.innerText = "Error: Credenciales incorrectas.";
+            errorMsg.style.color = "#ff4d4d";
+        }
+    });
+});
+
+document.getElementById('logout-button')?.addEventListener('click', () => signOut(auth));
+
+// =====================================================================
+// 4. INTERFAZ: MODO OSCURO Y MODALES
+// =====================================================================
+const themeToggle = document.getElementById('theme-toggle');
+if (themeToggle) {
+    themeToggle.addEventListener('change', (e) => {
+        document.documentElement.setAttribute('data-theme', e.target.checked ? 'light' : 'dark');
     });
 }
 
-// Evento para Cerrar Sesión
-if (logoutBtn) {
-    logoutBtn.addEventListener('click', () => {
-        signOut(auth).then(() => {
-            console.log("Sesión cerrada correctamente.");
-            // Al cerrar, el onAuthStateChanged automáticamente lo mandará al Login
-        }).catch((error) => {
-            console.error("Error al cerrar sesión:", error);
+// Cerrar Modales
+document.querySelectorAll('.modal-close-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+        const modalId = e.target.getAttribute('data-modal-id');
+        document.getElementById(modalId).style.display = 'none';
+    });
+});
+
+// Abrir Modal Masivo
+document.getElementById('abrir-modal-masivo')?.addEventListener('click', () => {
+    document.getElementById('bulk-add-modal').style.display = 'flex';
+});
+
+// =====================================================================
+// 5. CARGA DE DATOS Y RENDERIZADO DE LA TABLA
+// =====================================================================
+function cargarRequerimientos() {
+    const referencia = collection(db, "requerimientos");
+    const consulta = query(referencia, orderBy("timestamp", "desc"), limit(100));
+
+    onSnapshot(consulta, (snapshot) => {
+        todosLosRequerimientos = [];
+        snapshot.forEach((doc) => {
+            todosLosRequerimientos.push({ id: doc.id, ...doc.data() });
         });
+        
+        renderizarTabla(todosLosRequerimientos);
+        actualizarListasDesplegables(todosLosRequerimientos);
+        
+    }, (error) => {
+        console.error("Error al obtener datos:", error);
+        if(error.code === 'permission-denied') {
+            alert("⚠️ Firebase está bloqueando los datos. Por favor revisa las Reglas en Firestore (deben estar en 'Publicar').");
+        }
     });
 }
 
-
-// =====================================================================
-// 4. MEJORA: DEBOUNCE Y BUSCADOR LOCAL
-// =====================================================================
-function debounce(func, espera) {
-    let timeout;
-    return function ejecutandoFuncion(...args) {
-        const masTarde = () => {
-            clearTimeout(timeout);
-            func(...args);
-        };
-        clearTimeout(timeout);
-        timeout = setTimeout(masTarde, espera);
-    };
-}
-
-const inputBusqueda = document.getElementById('filtro-busqueda');
-if (inputBusqueda) {
-    inputBusqueda.addEventListener('input', debounce((e) => {
-        const termino = e.target.value.toLowerCase();
-        const filas = document.querySelectorAll('#tabla-servicios tr');
-        
-        // Filtra visualmente la tabla sin volver a descargar datos de internet
-        filas.forEach(fila => {
-            const textoFila = fila.innerText.toLowerCase();
-            if (textoFila.includes(termino)) {
-                fila.style.display = '';
-            } else {
-                fila.style.display = 'none';
-            }
-        });
-    }, 300));
-}
-
-
-// =====================================================================
-// 5. CARGA Y RENDERIZADO DE DATOS (TABLA DE SERVICIOS)
-// =====================================================================
-let ultimoDocVisible = null;
-let desuscribirCarga = null; // Variable para detener escuchas duplicadas
-
-function renderizarTabla(listaRequerimientos) {
+function renderizarTabla(lista) {
     const tbody = document.getElementById('tabla-servicios');
     if (!tbody) return;
     
     tbody.innerHTML = ''; 
     const fragmento = document.createDocumentFragment();
 
-    listaRequerimientos.forEach(req => {
+    lista.forEach(req => {
         const tr = document.createElement('tr');
-        
-        // Convertimos el estado en una clase válida (ej. "En Proceso" -> "en-proceso")
         const claseEstado = req.estado ? req.estado.toLowerCase().replace(/ /g, '-') : 'na';
         
-        // Formateo de fecha seguro
         let fechaSolicitud = '';
         if (req.timestamp) {
             fechaSolicitud = typeof req.timestamp.toDate === 'function' 
@@ -172,75 +140,72 @@ function renderizarTabla(listaRequerimientos) {
             <td>${req.horaInicio || ''}</td>
             <td>${req.horaTermino || ''}</td>
             <td>${(req.tecnicos || []).join(', ') || ''}</td>
-            <td>
-                <span class="status-badge badge-${claseEstado}">
-                    ${req.estado || 'N/A'}
-                </span>
-            </td>
+            <td><span class="status-badge badge-${claseEstado}">${req.estado || 'N/A'}</span></td>
             <td class="action-cell">
                 <button class="icon-btn" onclick="abrirModalServicio('${req.id}')">✏️ Editar</button>
             </td>
         `;
-        
         fragmento.appendChild(tr);
     });
 
     tbody.appendChild(fragmento);
+    const resultsInfo = document.getElementById('results-info');
+    if(resultsInfo) resultsInfo.innerText = `Mostrando ${lista.length} servicios`;
 }
 
-function cargarRequerimientos(paginaSiguiente = false) {
-    const referencia = collection(db, "requerimientos");
-    let consulta = query(referencia, orderBy("timestamp", "desc"), limit(50));
-
-    if (paginaSiguiente && ultimoDocVisible) {
-        consulta = query(referencia, orderBy("timestamp", "desc"), startAfter(ultimoDocVisible), limit(50));
-    }
-
-    // Si ya había una consulta en vivo, la detenemos para no duplicar datos
-    if (desuscribirCarga) {
-        desuscribirCarga();
-    }
-
-    // onSnapshot mantiene la tabla actualizada en tiempo real
-    desuscribirCarga = onSnapshot(consulta, (snapshot) => {
-        const datos = [];
-        
-        if (!snapshot.empty) {
-            ultimoDocVisible = snapshot.docs[snapshot.docs.length - 1];
-            snapshot.forEach((doc) => {
-                datos.push({ id: doc.id, ...doc.data() });
-            });
-        }
-        
-        renderizarTabla(datos);
-        
-        const resultsInfo = document.getElementById('results-info');
-        if(resultsInfo) resultsInfo.innerText = `Mostrando ${datos.length} servicios en esta página`;
-        
-    }, (error) => {
-        console.error("Error al obtener los documentos:", error);
-    });
-}
-
-
-// =====================================================================
-// 6. CONTROL DE VENTANAS MODALES
-// =====================================================================
-// Exponer la función de abrir modal al entorno global para el botón "Editar"
 window.abrirModalServicio = function(id) {
-    console.log("Abrir detalles del requerimiento ID:", id);
-    const modal = document.getElementById('service-modal');
-    if(modal) {
-        // Aquí deberás colocar tu lógica para rellenar los datos del modal usando el 'id'
-        modal.style.display = 'flex';
-    }
+    // Aquí puedes cargar los detalles en el modal usando el ID
+    document.getElementById('service-modal').style.display = 'flex';
 };
 
-// Cerrar cualquier modal al hacer clic en la (X)
-document.querySelectorAll('.modal-close-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-        const modalId = e.target.getAttribute('data-modal-id');
-        const modal = document.getElementById(modalId);
-        if (modal) modal.style.display = 'none';
+// =====================================================================
+// 6. SISTEMA DE FILTROS DINÁMICOS
+// =====================================================================
+function actualizarListasDesplegables(lista) {
+    const llenarSelect = (idSelect, campo) => {
+        const select = document.getElementById(idSelect);
+        if (!select) return;
+        
+        // Obtener valores únicos
+        const valoresUnicos = [...new Set(lista.map(req => req[campo]).filter(Boolean))].sort();
+        
+        // Mantener la primera opción "Todos"
+        select.innerHTML = '<option value="todos">Todos</option>';
+        
+        valoresUnicos.forEach(valor => {
+            const option = document.createElement('option');
+            option.value = valor;
+            option.textContent = valor;
+            select.appendChild(option);
+        });
+    };
+
+    llenarSelect('filtro-estado', 'estado');
+    llenarSelect('filtro-vendedor', 'vendedor');
+    llenarSelect('filtro-tipo-servicio', 'tipoServicio');
+}
+
+function aplicarFiltros() {
+    const textoBusqueda = document.getElementById('filtro-busqueda')?.value.toLowerCase() || '';
+    const estado = document.getElementById('filtro-estado')?.value || 'todos';
+    const vendedor = document.getElementById('filtro-vendedor')?.value || 'todos';
+    const tipoServicio = document.getElementById('filtro-tipo-servicio')?.value || 'todos';
+
+    const resultados = todosLosRequerimientos.filter(req => {
+        const coincideBusqueda = Object.values(req).some(val => 
+            String(val).toLowerCase().includes(textoBusqueda)
+        );
+        const coincideEstado = estado === 'todos' || req.estado === estado;
+        const coincideVendedor = vendedor === 'todos' || req.vendedor === vendedor;
+        const coincideTipo = tipoServicio === 'todos' || req.tipoServicio === tipoServicio;
+
+        return coincideBusqueda && coincideEstado && coincideVendedor && coincideTipo;
     });
+
+    renderizarTabla(resultados);
+}
+
+// Escuchar cambios en los filtros
+['filtro-busqueda', 'filtro-estado', 'filtro-vendedor', 'filtro-tipo-servicio'].forEach(id => {
+    document.getElementById(id)?.addEventListener('input', aplicarFiltros);
 });
