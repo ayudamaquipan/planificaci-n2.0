@@ -4,8 +4,304 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Portal del Planificador Unificado</title>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
     
-    <link rel="stylesheet" href="styles.css">
+    <style>
+        /* MANTENEMOS TODOS TUS ESTILOS ORIGINALES INTACTOS */
+        :root {
+            --font-main: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            --transition-speed: 0.3s;
+        }
+
+        @keyframes parpadeo-notificacion-dark {
+            0%, 100% { background-color: var(--bg-secondary); }
+            50% { background-color: rgba(125, 207, 255, 0.15); }
+        }
+
+        @keyframes parpadeo-notificacion-light {
+            0%, 100% { background-color: var(--bg-secondary); }
+            50% { background-color: rgba(0, 123, 255, 0.1); }
+        }
+
+        a.req-link {
+            color: var(--text-primary);
+            text-decoration: none;
+            transition: color var(--transition-speed);
+        }
+
+        a.req-link:hover {
+            color: var(--accent);
+            text-decoration: underline;
+        }
+
+        [data-theme="dark"] tr.fila-notificacion { animation: parpadeo-notificacion-dark 2.5s infinite; }
+        [data-theme="light"] tr.fila-notificacion { animation: parpadeo-notificacion-light 2.5s infinite; }
+        [data-theme="dark"] tr.fila-notificacion:hover,
+        [data-theme="light"] tr.fila-notificacion:hover { animation: none; background-color: var(--bg-tertiary); }
+
+        [data-theme="dark"] {
+            --bg-primary: #1a1b26; --bg-secondary: #24283b; --bg-tertiary: #414868;
+            --text-primary: #c0caf5; --text-secondary: #a9b1d6; --accent: #7dcfff;
+            --accent-glow: rgba(125, 207, 255, 0.2); --border-color: #3b3f51;
+            --success: #9ece6a; --pending: #e0af68; --danger: #f7768e; --in-progress: #7aa2f7;
+            --modal-bg: rgba(36, 40, 59, 0.85);
+            --chat-bubble-ejecutiva: #7A4C5D;
+            --chat-bubble-planificador: #4E6758;
+            --notif-unread-bg: rgba(125, 207, 255, 0.1);
+        }
+        [data-theme="light"] {
+            --bg-primary: #f0f2f5; --bg-secondary: #ffffff; --bg-tertiary: #e9ecef;
+            --text-primary: #212529; --text-secondary: #495057; --accent: #007bff;
+            --accent-glow: rgba(0, 123, 255, 0.15); --border-color: #dee2e6;
+            --success: #28a745; --pending: #ffc107; --danger: #dc3545; --in-progress: #17a2b8;
+            --modal-bg: rgba(255, 255, 255, 0.85);
+            --chat-bubble-ejecutiva: #F8CECC;
+            --chat-bubble-planificador: #D5E8D4;
+            --notif-unread-bg: rgba(0, 123, 255, 0.08);
+        }
+        *, *::before, *::after { box-sizing: border-box; }
+        body {
+            font-family: var(--font-main); margin: 0;
+            background-color: var(--bg-primary); color: var(--text-primary);
+            transition: background-color var(--transition-speed), color var(--transition-speed);
+        }
+        .container { margin: 0 auto; padding: 1rem 1.5rem; }
+        .header-controls {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 1rem 1.5rem; background-color: var(--bg-secondary);
+            border-radius: 12px; margin-bottom: 1.5rem; border: 1px solid var(--border-color);
+        }
+        .header-controls h1 { margin: 0; font-size: 1.5rem; color: var(--text-primary); font-weight: 600; }
+        .action-buttons { display: flex; align-items: center; gap: 1rem; }
+        .icon-btn {
+            background: var(--bg-secondary); border: 1px solid var(--border-color); color: var(--text-secondary);
+            padding: 0.5rem 1rem; border-radius: 8px; cursor: pointer; display: flex;
+            align-items: center; gap: 0.5rem; font-weight: 600; width: auto;
+            transition: all var(--transition-speed);
+        }
+        .icon-btn:hover { color: var(--accent); border-color: var(--accent); box-shadow: 0 0 15px var(--accent-glow); }
+        .icon-btn.logout { background: var(--danger); border-color: var(--danger); color: white; }
+        .icon-btn svg { width: 16px; height: 16px; }
+
+        .notification-bell { position: relative; }
+        #notif-bell-btn {
+            background: none; border: none; color: var(--text-secondary); cursor: pointer;
+            padding: 0.5rem; border-radius: 50%; width: 40px; height: 40px;
+            display: flex; align-items: center; justify-content: center;
+        }
+        #notif-bell-btn:hover { background-color: var(--bg-tertiary); color: var(--accent); }
+        #notif-count {
+            position: absolute; top: 0; right: 0;
+            background-color: var(--danger); color: white;
+            border-radius: 50%; font-size: 0.7rem; font-weight: bold;
+            width: 18px; height: 18px; display: flex;
+            align-items: center; justify-content: center;
+            transform: translate(25%, -25%);
+            display: none; 
+        }
+        #notif-panel {
+            position: absolute; top: calc(100% + 10px); right: 0;
+            width: 350px; max-height: 400px; overflow-y: auto;
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+            z-index: 1100; opacity: 0; visibility: hidden;
+            transform: translateY(-10px); transition: all var(--transition-speed);
+        }
+        #notif-panel.visible { opacity: 1; visibility: visible; transform: translateY(0); }
+        .notif-item { padding: 1rem; border-bottom: 1px solid var(--border-color); cursor: pointer; transition: background-color var(--transition-speed); }
+        .notif-item:last-child { border-bottom: none; }
+        .notif-item:hover { background-color: var(--bg-tertiary); }
+        .notif-item p { margin: 0 0 0.25rem 0; font-size: 0.9rem; line-height: 1.4; white-space: normal; }
+        .notif-item small { font-size: 0.75rem; color: var(--text-secondary); }
+        .notif-item.unread { background-color: var(--notif-unread-bg); }
+
+        .card { background-color: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; }
+        .card h2 { margin-top: 0; margin-bottom: 1.5rem; font-size: 1.2rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px; }
+        select, input, textarea {
+            width: 100%; padding: 0.75rem; font-size: 0.95rem; border: 1px solid var(--border-color);
+            border-radius: 8px; box-sizing: border-box; margin-bottom: 0;
+            background: var(--bg-tertiary); color: var(--text-primary);
+        }
+        button {
+             width: 100%; padding: 0.75rem; font-size: 1rem; border: none;
+             border-radius: 8px; box-sizing: border-box;
+             background-color: var(--accent); color: var(--bg-secondary); font-weight: 600; cursor: pointer; transition: all 0.2s;
+        }
+        button:hover { filter: brightness(1.1); }
+        label { font-weight: 600; font-size: 0.9rem; margin-bottom: 0.5rem; display: block; color: var(--text-secondary); }
+
+        #login-container { display: flex; align-items: center; justify-content: center; height: 100vh; padding: 1.5rem; }
+        .login-card { max-width: 450px; width: 100%; }
+        #error-message { color: var(--danger); text-align: center; margin-top: 1rem; display: none; }
+
+        .filtros-container { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem 1.5rem; align-items: flex-end; }
+        .table-container { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; }
+
+        th, td { padding: 0.8rem 0.6rem; font-size: 0.85rem; text-align: left; border-bottom: 1px solid var(--border-color); white-space: nowrap; }
+        th { font-size: 0.875rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; user-select: none; position: relative; }
+        th .sort-indicator { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); opacity: 0.6; }
+        tbody tr:hover { background-color: var(--bg-tertiary); }
+        
+        [data-theme="dark"] tr.has-observation { background-color: rgba(224, 175, 104, 0.1); }
+        [data-theme="light"] tr.has-observation { background-color: rgba(255, 193, 7, 0.15); }
+        tr.has-observation:hover { background-color: var(--bg-tertiary); }
+        
+        .notification-dot {
+			display: inline-block; width: 12px; height: 12px;
+			background-color: var(--danger); border-radius: 50%;
+			margin-left: 8px; vertical-align: middle;
+			animation: pulse 1.5s infinite; flex-shrink: 0;
+		}
+
+		@keyframes pulse {
+			0% { box-shadow: 0 0 0 0 rgba(247, 118, 142, 0.7); }
+			70% { box-shadow: 0 0 0 10px rgba(247, 118, 142, 0); }
+			100% { box-shadow: 0 0 0 0 rgba(247, 118, 142, 0); }
+		}
+
+        td input, td select { padding: 0.4rem; font-size: 0.85rem; min-width: 90px; background-color: var(--bg-secondary); border: 1px solid var(--border-color); box-sizing: border-box; color: var(--text-primary); }
+        tbody tr:hover td input, tbody tr:hover td select { background-color: var(--bg-tertiary); }
+        td input:focus, td select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow); }
+        [data-theme="dark"] input[type="date"], [data-theme="dark"] input[type="time"] { color-scheme: dark; background-color: var(--bg-secondary); color: var(--text-primary); }
+
+        td.cliente-cell { white-space: normal; min-width: 150px; max-width: 250px; word-break: break-word; }
+        .tecnico-display { display: flex; flex-direction: column; gap: 0.5rem; align-items: flex-start; }
+        .tecnico-names { font-size: 0.9rem; padding: 0.5rem; background-color: var(--bg-primary); border-radius: 6px; min-height: 38px; width: 100%; white-space: normal; }
+        .btn-select-tecnicos { width: 100%; font-size: 0.85rem; padding: 0.4rem 0.8rem; }
+
+        .action-cell { display: flex; gap: 0.5rem; align-items: center; }
+        .action-cell button { width: auto; font-size: 0.85rem; padding: 0.4rem 0.8rem; }
+        .btn-detail { background-color: var(--accent); color: var(--bg-secondary); }
+        .btn-delete { background-color: var(--danger); color: white; }
+
+        .status-badge { padding: 0.3em 0.7em; border-radius: 10px; font-weight: 600; font-size: 0.8rem; text-align: center; display: inline-block; }
+        .status-badge.badge-si { background-color: var(--in-progress); color: white; }
+        .status-badge.badge-no { background-color: var(--bg-tertiary); color: var(--text-secondary); }
+        .status-badge.badge-pendiente { background-color: var(--pending); color: #1a1b26; }
+        .status-badge.badge-na { background-color: transparent; color: var(--text-secondary); }
+
+        td select[name="estado"] {
+            font-weight: 600; border: 2px solid; -webkit-appearance: none; appearance: none;
+            background-image: url('data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%23a9b1d6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>');
+            background-repeat: no-repeat; background-position: right 0.5rem center; background-size: 1em; padding-right: 2.2rem;
+        }
+        [data-theme="light"] td select[name="estado"] {
+            background-image: url('data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%23495057" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>');
+        }
+        td select.status-Pendiente, td select.status-Esperando-Repuestos { border-color: var(--pending); color: var(--pending); }
+        td select.status-Confirmado { border-color: var(--accent); color: var(--accent); }
+        td select.status-Ejecutado { border-color: var(--success); color: var(--success); }
+        td select.status-Otros { border-color: var(--text-secondary); color: var(--text-secondary); }
+        td select.status-Repuesto-devuelto { border-color: var(--danger); color: var(--danger); }
+        td select.status-Confirmar-con-cliente { border-color: #bb9af7; color: #bb9af7; }
+        [data-theme="light"] td select.status-Confirmar-con-cliente { border-color: #6f42c1; color: #6f42c1; }
+
+        .table-footer { display: flex; justify-content: space-between; align-items: center; padding-top: 1.5rem; flex-wrap: wrap; gap: 1rem; }
+        #results-info { font-size: 0.9rem; color: var(--text-secondary); }
+        .pagination-controls button {
+            background: var(--bg-secondary); border: 1px solid var(--border-color); color: var(--text-secondary);
+            padding: 0.5rem 0.8rem; margin: 0 2px; border-radius: 6px; cursor: pointer; transition: all var(--transition-speed); width: auto;
+        }
+        .pagination-controls button:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+        .pagination-controls button.active { background-color: var(--accent); color: var(--bg-secondary); border-color: var(--accent); font-weight: bold; }
+        .pagination-controls button:disabled { cursor: not-allowed; opacity: 0.5; }
+
+        .theme-switch { position: relative; display: inline-block; width: 50px; height: 26px; }
+        .theme-switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: var(--bg-tertiary); transition: var(--transition-speed); border-radius: 26px; }
+        .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 4px; bottom: 4px; background-color: white; transition: var(--transition-speed); border-radius: 50%; }
+        input:checked + .slider { background-color: var(--accent); }
+        input:checked + .slider:before { transform: translateX(24px); }
+
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.7); display: flex; justify-content: center; align-items: center;
+            z-index: 1000; opacity: 0; visibility: hidden; transition: opacity var(--transition-speed);
+        }
+        .modal-overlay.visible { opacity: 1; visibility: visible; }
+        .modal-container {
+            background: var(--modal-bg); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+            border: 1px solid var(--border-color); border-radius: 16px;
+            width: 90%; max-width: 900px; padding: 1.5rem;
+            transform: scale(0.9); transition: transform var(--transition-speed);
+            display: flex; flex-direction: column; max-height: 95vh;
+        }
+        .modal-overlay.visible .modal-container { transform: scale(1); }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem; margin-bottom: 1rem; flex-shrink: 0; }
+        .modal-header h2 { margin: 0; color: var(--accent); }
+        .modal-close-btn { background: none; border: none; font-size: 1.5rem; color: var(--text-secondary); cursor: pointer; padding: 0; }
+        
+        .modal-body { display: flex; gap: 1.5rem; overflow: hidden; flex-grow: 1; }
+        .modal-details-section { flex: 6; overflow-y: auto; padding-right: 10px; }
+        .modal-chat-section { flex: 4; display: flex; flex-direction: column; border-left: 1px solid var(--border-color); padding-left: 1.5rem; overflow: hidden; }
+        .modal-chat-section h4 { margin-top: 0; margin-bottom: 1rem; color: var(--text-secondary); text-transform: uppercase; font-size: 1rem; letter-spacing: 1px; }
+        .modal-details-section .detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.25rem; }
+        .modal-details-section .detail-item strong { display: block; color: var(--text-secondary); margin-bottom: 0.25rem; font-size: 0.875rem; text-transform: uppercase; }
+        .modal-details-section .detail-item span, .modal-details-section .detail-item input, .modal-details-section .detail-item select, .modal-details-section .detail-item textarea {
+            width: 100%; padding: 0.5rem; font-size: 0.9rem; border: 1px solid var(--border-color);
+            border-radius: 8px; background: var(--bg-tertiary); color: var(--text-primary);
+        }
+        .modal-details-section .full-width { grid-column: 1 / -1; }
+        .modal-details-section .currency-input { position: relative; }
+        .modal-details-section .currency-input::before { content: "$"; position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text-secondary); }
+        .modal-details-section .currency-input input { padding-left: 25px; }
+
+        #modal-chat-history { flex-grow: 1; overflow-y: auto; padding: 0.5rem; display: flex; flex-direction: column; gap: 0.75rem; }
+        .chat-message { max-width: 80%; padding: 0.6rem 0.9rem; border-radius: 12px; font-size: 0.9rem; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; }
+        .chat-message.ejecutiva { background-color: var(--chat-bubble-ejecutiva); color: var(--text-primary); align-self: flex-start; border-bottom-left-radius: 4px; }
+        .chat-message.planificador { background-color: var(--chat-bubble-planificador); color: var(--text-primary); align-self: flex-end; border-bottom-right-radius: 4px; }
+        .chat-message .sender { display: block; font-size: 0.75rem; font-weight: 600; margin-bottom: 0.25rem; opacity: 0.8; }
+        
+        #modal-chat-form { display: flex; gap: 0.5rem; padding-top: 1rem; border-top: 1px solid var(--border-color); flex-shrink: 0; }
+        #modal-chat-form input { flex-grow: 1; }
+        #modal-chat-form button { width: auto; }
+        
+        .modal-footer { margin-top: 1.5rem; border-top: 1px solid var(--border-color); padding-top: 1.5rem; display: flex; justify-content: flex-end; gap: 1rem; flex-shrink: 0; }
+        .modal-footer button { width: auto; padding: 0.5rem 1.2rem; font-size: 0.9rem; }
+
+        #tecnico-select-modal .modal-container { max-width: 500px; }
+        #tecnico-list { max-height: 40vh; overflow-y: auto; padding-right: 1rem; }
+        .tecnico-check-item { display: flex; align-items: center; gap: 1rem; padding: 0.75rem; border-radius: 8px; transition: background-color var(--transition-speed); }
+        .tecnico-check-item:hover { background-color: var(--bg-tertiary); }
+        .tecnico-check-item input[type="checkbox"] { width: 1.2em; height: 1.2em; accent-color: var(--accent); }
+        .tecnico-check-item label { margin-bottom: 0; font-weight: normal; font-size: 1rem; width: 100%; cursor: pointer; }
+        
+        #bulk-add-modal .modal-content { display: flex; flex-direction: column; }
+        
+        #filter-wrapper { display: none; margin-top: 1rem; border-top: 1px solid var(--border-color); padding-top: 1rem; }
+        .filter-header { display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
+        .filter-header h2 { margin: 0; }
+        .toggle-icon { transition: transform 0.3s; }
+        .toggle-icon.rotated { transform: rotate(180deg); }
+
+        @media (max-width: 992px) {
+            .modal-body { flex-direction: column; }
+            .modal-chat-section { border-left: none; border-top: 1px solid var(--border-color); padding-left: 0; padding-top: 1rem; max-height: 40vh; }
+        }
+        @media (max-width: 768px) {
+            .container { padding: 0.5rem; }
+            .filtros-container { grid-template-columns: 1fr; }
+            th, td { padding: 0.6rem 0.4rem; font-size: 0.75rem; }
+            td input, td select { padding: 0.3rem; font-size: 0.75rem; min-width: 70px; }
+            .tecnico-display .tecnico-names { font-size: 0.75rem; min-height: 30px; }
+            .btn-select-tecnicos { font-size: 0.7rem; padding: 0.3rem 0.5rem; }
+            .action-cell button { font-size: 0.7rem; padding: 0.2rem 0.4rem; }
+            .modal-container { width: 95%; padding: 1rem; max-height: 90vh; }
+            .modal-details-section .detail-grid { grid-template-columns: 1fr; }
+            .modal-footer { padding-top: 1rem; }
+            .modal-footer button { width: 100%; }
+        }
+         @media (max-width: 600px) {
+            .header-controls { flex-direction: column; gap: 1rem; align-items: flex-start; }
+            .action-buttons { width: 100%; justify-content: space-between; }
+        }
+        th[data-sort] { cursor: pointer; transition: background-color 0.2s; }
+        th[data-sort]:hover { background-color: var(--bg-tertiary); }
+    </style>
 </head>
 <body>
 
@@ -14,7 +310,7 @@
             <h2>Acceso de Planificador</h2>
             <form id="login-form">
                 <label for="email">Correo Electrónico</label>
-                <input type="email" id="email" required>
+                <input type="email" id="email" autocomplete="username" required>
                 <label for="password">Contraseña</label>
                 <input type="password" id="password" autocomplete="current-password" required>
                 <button type="submit" style="margin-top: 1rem;">Acceder</button>
@@ -59,38 +355,30 @@
                         </div>
                         <div>
                             <label for="filtro-estado">Filtrar por estado</label>
-                            <select id="filtro-estado">
-                                <option value="todos">Todos</option>
-                            </select>
+                            <select id="filtro-estado"><option value="todos">Todos</option></select>
                         </div>
                         <div>
                             <label for="filtro-vendedor">Filtrar por vendedor</label>
-                            <select id="filtro-vendedor">
-                                <option value="todos">Todos</option>
-                            </select>
+                            <select id="filtro-vendedor"><option value="todos">Todos</option></select>
                         </div>
                         <div>
                             <label for="filtro-tipo-servicio">Filtrar por Tipo Servicio</label>
-                            <select id="filtro-tipo-servicio">
-                                <option value="todos">Todos</option>
-                            </select>
+                            <select id="filtro-tipo-servicio"><option value="todos">Todos</option></select>
                         </div>
                          <div>
                             <label for="filtro-tecnico">Filtrar por Técnico</label>
-                            <select id="filtro-tecnico">
-                                <option value="todos">Todos</option>
-                            </select>
+                            <select id="filtro-tecnico"><option value="todos">Todos</option></select>
                         </div>
                         
                         <div>
-                            <label>&nbsp;</label>
+                            <label> </label>
                             <button id="abrir-modal-masivo" class="icon-btn" style="width: 100%; justify-content: center;">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M14 8a1 1 0 0 1-1 1H9v4a1 1 0 0 1-2 0V9H3a1 1 0 0 1 0-2h4V3a1 1 0 0 1 2 0v4h4a1 1 0 0 1 1 1z"/></svg>
                                     Masivo
                             </button>
                         </div>
-                        <div>
-                            <label>&nbsp;</label>
+                            <div>
+                            <label> </label>
                             <button id="exportar-csv" class="icon-btn" style="width: 100%; justify-content: center;">
                                     <svg width="16" height="16" fill="currentColor" viewBox="0 0 20 20"><path d="M14.707 7.293a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L9 10.586V3a1 1 0 112 0v7.586l2.707-2.707a1 1 0 011.414 0zM4 14a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1z"></path></svg>
                                     CSV
@@ -111,8 +399,7 @@
                                 <th data-sort="cliente">Cliente<span class="sort-indicator"></span></th>
                                 <th data-sort="direccion">Dirección Completa<span class="sort-indicator"></span></th>
                                 <th data-sort="tipoServicio">Tipo Servicio<span class="sort-indicator"></span></th>
-                                <th data-sort="timestamp">Fecha Creación<span class="sort-indicator"></span></th> 
-                                <th>Tiene Rep.</th>
+                                <th data-sort="timestamp">Fecha Creación<span class="sort-indicator"></span></th> <th>Tiene Rep.</th>
                                 <th>Rep. Desp.</th>
                                 <th>Fecha Asignada</th>
                                 <th>H. Traslado</th>
@@ -250,7 +537,785 @@
         </div>
     </div>
 
-    <script type="module" src="app.js"></script>
+    <script>
+        const firebaseConfig = {
+          apiKey: "AIzaSyA9tUGGmMqk85Hljw8H1XoTfX2U5iQu85c",
+          authDomain: "control-de-servicios-b8e34.firebaseapp.com",
+          projectId: "control-de-servicios-b8e34",
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const auth = firebase.auth();
 
+        // MEJORA: ACTIVAR PERSISTENCIA OFFLINE EN CACHÉ
+        db.enablePersistence().catch(function(err) {
+            console.warn("La persistencia offline no pudo activarse (modo incógnito o múltiples pestañas).");
+        });
+
+        // --- DATOS GEOGRÁFICOS ---
+        const regionesYComunas = {
+            "Arica y Parinacota": ["Arica", "Camarones", "Putre", "General Lagos"],
+            "Tarapacá": ["Iquique", "Alto Hospicio", "Pozo Almonte", "Camiña", "Colchane", "Huara", "Pica"],
+            "Antofagasta": ["Antofagasta", "Mejillones", "Sierra Gorda", "Taltal", "Calama", "Ollagüe", "San Pedro de Atacama", "Tocopilla", "María Elena"],
+            "Atacama": ["Copiapó", "Caldera", "Tierra Amarilla", "Chañaral", "Diego de Almagro", "Vallenar", "Alto del Carmen", "Freirina", "Huasco"],
+            "Coquimbo": ["La Serena", "Coquimbo", "Andacollo", "La Higuera", "Paiguano", "Vicuña", "Illapel", "Canela", "Los Vilos", "Salamanca", "Ovalle", "Combarbalá", "Monte Patria", "Punitaqui", "Río Hurtado"],
+            "Valparaíso": ["Valparaíso", "Casablanca", "Concón", "Juan Fernández", "Puchuncaví", "Quintero", "Viña del Mar", "Isla de Pascua", "Los Andes", "Calle Larga", "Rinconada", "San Esteban", "La Ligua", "Cabildo", "Papudo", "Petorca", "Zapallar", "Quillota", "Calera", "Hijuelas", "La Cruz", "Nogales", "San Antonio", "Algarrobo", "Cartagena", "El Quisco", "El Tabo", "Santo Domingo", "San Felipe", "Catemu", "Llaillay", "Panquehue", "Putaendo", "Santa María", "Quilpué", "Limache", "Olmué", "Villa Alemana"],
+            "Metropolitana": ["Santiago", "Cerrillos", "Cerro Navia", "Conchalí", "El Bosque", "Estación Central", "Huechuraba", "Independencia", "La Cisterna", "La Florida", "La Granja", "La Pintana", "La Reina", "Las Condes", "Lo Barnechea", "Lo Espejo", "Lo Prado", "Macul", "Maipú", "Ñuñoa", "Pedro Aguirre Cerda", "Peñalolén", "Providencia", "Pudahuel", "Quilicura", "Quinta Normal", "Recoleta", "Renca", "San Joaquín", "San Miguel", "San Ramón", "Vitacura", "Puente Alto", "Pirque", "San José de Maipo", "Colina", "Lampa", "Tiltil", "San Bernardo", "Buin", "Calera de Tango", "Paine", "Melipilla", "Alhué", "Curacaví", "María Pinto", "San Pedro", "Talagante", "El Monte", "Isla de Maipo", "Padre Hurtado", "Peñaflor"],
+            "O'Higgins": ["Rancagua", "Codegua", "Coinco", "Coltauco", "Doñihue", "Graneros", "Las Cabras", "Machalí", "Malloa", "Mostazal", "Olivar", "Peumo", "Pichidegua", "Quinta de Tilcoco", "Rengo", "Requínoa", "San Vicente", "Pichilemu", "La Estrella", "Litueche", "Marchihue", "Navidad", "Paredones", "San Fernando", "Chépica", "Chimbarongo", "Lolol", "Nancagua", "Palmilla", "Peralillo", "Placilla", "Pumanque", "Santa Cruz"],
+            "Maule": ["Talca", "Constitución", "Curepto", "Empedrado", "Maule", "Pelarco", "Pencahue", "Río Claro", "San Clemente", "San Rafael", "Cauquenes", "Chanco", "Pelluhue", "Curicó", "Hualañé", "Licantén", "Molina", "Rauco", "Romeral", "Sagrada Familia", "Teno", "Vichuquén", "Linares", "Colbún", "Longaví", "Parral", "Retiro", "San Javier", "Villa Alegre", "Yerbas Buenas"],
+            "Ñuble": ["Chillán", "Bulnes", "Cobquecura", "Coelemu", "Coihueco", "Chillán Viejo", "El Carmen", "Ninhue", "Ñiquén", "Pemuco", "Pinto", "Portezuelo", "Quillón", "Quirihue", "Ránquil", "San Carlos", "San Fabián", "San Ignacio", "San Nicolás", "Treguaco", "Yungay"],
+            "Biobío": ["Concepción", "Coronel", "Chiguayante", "Florida", "Hualqui", "Lota", "Penco", "San Pedro de la Paz", "Santa Juana", "Talcahuano", "Tomé", "Hualpén", "Lebu", "Arauco", "Cañete", "Contulmo", "Curanilahue", "Los Álamos", "Tirúa", "Los Ángeles", "Antuco", "Cabrero", "Laja", "Mulchén", "Nacimiento", "Negrete", "Quilaco", "Quilleco", "San Rosendo", "Santa Bárbara", "Tucapel", "Yumbel", "Alto Biobío"],
+            "Araucanía": ["Temuco", "Carahue", "Cunco", "Curarrehue", "Freire", "Galvarino", "Gorbea", "Lautaro", "Loncoche", "Melipeuco", "Nueva Imperial", "Padre Las Casas", "Perquenco", "Pitrufquén", "Pucón", "Saavedra", "Teodoro Schmidt", "Toltén", "Vilcún", "Villarrica", "Cholchol", "Angol", "Collipulli", "Curacautín", "Ercilla", "Lonquimay", "Los Sauces", "Lumaco", "Purén", "Renaico", "Traiguén", "Victoria"],
+            "Los Ríos": ["Valdivia", "Corral", "Lanco", "Los Lagos", "Máfil", "Mariquina", "Paillaco", "Panguipulli", "La Unión", "Futrono", "Lago Ranco", "Río Bueno"],
+            "Los Lagos": ["Puerto Montt", "Calbuco", "Cochamó", "Fresia", "Frutillar", "Los Muermos", "Llanquihue", "Maullín", "Puerto Varas", "Castro", "Ancud", "Chonchi", "Curaco de Vélez", "Dalcahue", "Puqueldón", "Queilén", "Quellón", "Quemchi", "Quinchao", "Osorno", "Puerto Octay", "Purranque", "Puyehue", "Río Negro", "San Juan de la Costa", "San Pablo", "Chaitén", "Futaleufú", "Hualaihué", "Palena"],
+            "Aysén": ["Coyhaique", "Lago Verde", "Aysén", "Cisnes", "Guaitecas", "Cochrane", "O'Higgins", "Tortel", "Chile Chico", "Río Ibáñez"],
+            "Magallanes": ["Punta Arenas", "Laguna Blanca", "Río Verde", "San Gregorio", "Cabo de Hornos", "Antártica", "Porvenir", "Primavera", "Timaukel", "Natales", "Torres del Paine"]
+        };
+
+        const state = {
+            serviciosCache: [],
+            tecnicosCache: [],
+            vendedoresCache: [],
+            filteredServices: [],
+            notificacionesCache: [],
+            sortConfig: { column: 'timestamp', order: 'desc' },
+            pagination: { currentPage: 1, rowsPerPage: 20 },
+            currentUser: null,
+        };
+        
+        let unsubscribeServicios;
+        let unsubscribeChat;
+        let unsubscribeNotificaciones;
+
+        const ui = {
+            loginContainer: document.getElementById('login-container'),
+            mainContent: document.getElementById('main-content'),
+            logoutButton: document.getElementById('logout-button'),
+            headerTitle: document.getElementById('header-title'),
+            notifBellBtn: document.getElementById('notif-bell-btn'),
+            notifCount: document.getElementById('notif-count'),
+            notifPanel: document.getElementById('notif-panel'),
+            loginForm: document.getElementById('login-form'),
+            emailInput: document.getElementById('email'),
+            passwordInput: document.getElementById('password'),
+            errorMessage: document.getElementById('error-message'),
+            tablaServiciosBody: document.getElementById('tabla-servicios'),
+            filtroBusqueda: document.getElementById('filtro-busqueda'),
+            filtroEstado: document.getElementById('filtro-estado'),
+            filtroVendedor: document.getElementById('filtro-vendedor'),
+            filtroTipoServicio: document.getElementById('filtro-tipo-servicio'),
+            filtroTecnico: document.getElementById('filtro-tecnico'),
+            resultsInfo: document.getElementById('results-info'),
+            paginationControls: document.getElementById('pagination-controls'),
+            themeToggle: document.getElementById('theme-toggle'),
+            abrirModalMasivoBtn: document.getElementById('abrir-modal-masivo'),
+            exportarCsvBtn: document.getElementById('exportar-csv'),
+            modal: {
+                overlay: document.getElementById('service-modal'),
+                titleReqNumDisplay: document.getElementById('modal-req-num-display'),
+                numRequerimientoInput: document.getElementById('modal-numRequerimiento-input'),
+                clienteInput: document.getElementById('modal-cliente-input'),
+                numNVInput: document.getElementById('modal-numNV-input'),
+                montoServicioInput: document.getElementById('modal-montoServicio-input'),
+                tipoServicioSelect: document.getElementById('modal-tipoServicio-select'),
+                regionSelect: document.getElementById('modal-region-select'),
+                comunaSelect: document.getElementById('modal-comuna-select'),
+                direccionInput: document.getElementById('modal-direccion-input'),
+                vendedorInput: document.getElementById('modal-vendedor-input'),
+                estadoDisplay: document.getElementById('modal-estado'),
+                tecnicoDisplay: document.getElementById('modal-tecnico'),
+                fechaAsignadaDisplay: document.getElementById('modal-fechaAsignada'),
+                horaTrasladoDisplay: document.getElementById('modal-horaTraslado'),
+                horaInicioDisplay: document.getElementById('modal-horaInicio'),
+                horaTerminoDisplay: document.getElementById('modal-horaTermino'),
+                contactoInput: document.getElementById('modal-contacto-input'),
+                telefonoInput: document.getElementById('modal-telefono-input'),
+                tieneRepuestosSelect: document.getElementById('modal-tieneRepuestos-select'),
+                repDespachadosSelect: document.getElementById('modal-repDespachados-select'),
+                fechaSolicitudDisplay: document.getElementById('modal-fecha-solicitud'),
+                fechaEdicionDisplay: document.getElementById('modal-fecha-edicion'),
+                infoServicioTextarea: document.getElementById('modal-info-servicio-textarea'),
+                observaciones: document.getElementById('modal-observaciones'),
+                guardarBtn: document.getElementById('modal-guardar-btn'),
+                chatHistory: document.getElementById('modal-chat-history'),
+                chatForm: document.getElementById('modal-chat-form'),
+                chatInput: document.getElementById('modal-chat-input'),
+            },
+            tecnicoModal: {
+                overlay: document.getElementById('tecnico-select-modal'),
+                list: document.getElementById('tecnico-list'),
+                guardarBtn: document.getElementById('tecnico-modal-guardar-btn'),
+                cancelarBtn: document.getElementById('tecnico-modal-cancelar-btn'),
+            },
+            bulkAddModal: {
+                overlay: document.getElementById('bulk-add-modal'),
+                pasteArea: document.getElementById('bulk-paste-area'),
+                saveBtn: document.getElementById('bulk-add-save-btn'),
+            },
+            modalCloseBtns: document.querySelectorAll('.modal-close-btn'),
+        };
+
+        // MEJORA: FUNCIÓN DEBOUNCE PARA ACELERAR EL BUSCADOR
+        function debounce(func, wait) {
+            let timeout;
+            return function ejecutando(...args) {
+                const later = () => { clearTimeout(timeout); func(...args); };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
+
+        // --- INICIALIZAR REGIONES EN MODAL ---
+        function cargarRegionesModal() {
+            ui.modal.regionSelect.innerHTML = '<option value="">Seleccione Región</option>';
+            for (const region in regionesYComunas) {
+                ui.modal.regionSelect.add(new Option(region, region));
+            }
+        }
+        cargarRegionesModal();
+
+        function cargarComunasModal(regionSeleccionada) {
+            ui.modal.comunaSelect.innerHTML = '<option value="">Seleccione Comuna</option>';
+            if (regionSeleccionada && regionesYComunas[regionSeleccionada]) {
+                ui.modal.comunaSelect.disabled = false;
+                regionesYComunas[regionSeleccionada].forEach(comuna => {
+                    ui.modal.comunaSelect.add(new Option(comuna, comuna));
+                });
+            } else {
+                ui.modal.comunaSelect.disabled = true;
+            }
+        }
+
+        ui.modal.regionSelect.addEventListener('change', (e) => {
+            cargarComunasModal(e.target.value);
+        });
+
+        const toggleBtn = document.getElementById('toggle-filters-btn');
+        const filterWrapper = document.getElementById('filter-wrapper');
+        const toggleIcon = document.querySelector('.toggle-icon');
+
+        toggleBtn.addEventListener('click', () => {
+            const isHidden = filterWrapper.style.display === 'none';
+            filterWrapper.style.display = isHidden ? 'block' : 'none';
+            if(isHidden) toggleIcon.classList.add('rotated');
+            else toggleIcon.classList.remove('rotated');
+        });
+
+        function populateTechnicianFilterSelect() {
+            const select = ui.filtroTecnico;
+            const currentVal = select.value;
+            select.innerHTML = '<option value="todos">Todos</option>';
+            const sortedTechs = [...state.tecnicosCache].sort();
+            sortedTechs.forEach(techName => select.add(new Option(techName, techName)));
+            if (sortedTechs.includes(currentVal)) select.value = currentVal;
+        }
+
+        const actualizarServicio = async (id, data) => {
+            const finalData = { ...data, fechaEdicion: firebase.firestore.FieldValue.serverTimestamp() };
+            try {
+                await db.collection('servicios').doc(id).update(finalData);
+            } catch (error) {
+                console.error("Error al actualizar servicio: ", error);
+                alert("Error al actualizar el servicio. Por favor, inténtalo de nuevo.");
+            }
+        }
+        
+	    const duplicarServicio = async (id) => { 
+            const servicioOriginal = state.serviciosCache.find(s => s.id === id);
+            if (!servicioOriginal) return alert("No se encontró el servicio original para duplicar.");
+            if (!confirm(`¿Quieres añadir un nuevo día de servicio para el Req. Nº ${servicioOriginal.numRequerimiento || 'N/A'}? \nSe creará una nueva entrada con la misma información base.`)) return;
+            
+            const nuevoServicioData = {
+                numRequerimiento: servicioOriginal.numRequerimiento || '',
+                numNV: servicioOriginal.numNV || '',
+                cliente: servicioOriginal.cliente || '',
+                montoServicio: servicioOriginal.montoServicio || '',
+                tipoServicio: servicioOriginal.tipoServicio || '',
+                vendedor: servicioOriginal.vendedor || '',
+                direccion: servicioOriginal.direccion || '',
+                region: servicioOriginal.region || '',
+                comuna: servicioOriginal.comuna || '',
+                nomContacto: servicioOriginal.nomContacto || '',
+                numContacto: servicioOriginal.numContacto || '',
+                infoServicio: servicioOriginal.infoServicio || '',
+                tieneRepuestos: servicioOriginal.tieneRepuestos || 'No',
+                repuestosDespachados: servicioOriginal.repuestosDespachados || 'N/A',
+                fechaAsignada: "", horaTraslado: "", horaInicio: "", horaTermino: "",
+                tecnicos: servicioOriginal.tecnicos || [],
+                observacionesPlanificacion: "",
+                estado: "Pendiente",
+                timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                fechaEdicion: firebase.firestore.FieldValue.serverTimestamp(),
+            };
+            try {
+                await db.collection('servicios').add(nuevoServicioData);
+                alert('Nuevo día de servicio añadido correctamente.');
+            } catch (error) {
+                console.error("Error al duplicar el servicio: ", error);
+                alert("Ocurrió un error al añadir el nuevo día de servicio.");
+            }
+        };
+
+        const eliminarServicio = async (id) => {
+            const originalServices = [...state.serviciosCache];
+            state.serviciosCache = state.serviciosCache.filter(s => s.id !== id);
+            applyFiltersAndRender();
+            try {
+                await db.collection('servicios').doc(id).delete();
+            } catch (error) {
+                console.error("Error al eliminar servicio: ", error);
+                alert("Error al eliminar el servicio.");
+                state.serviciosCache = originalServices;
+                applyFiltersAndRender();
+            }
+        };
+
+        function formatTimestamp(timestamp) {
+            if (!timestamp || typeof timestamp.toDate !== 'function') return 'N/A';
+            return timestamp.toDate().toLocaleString('es-CL');
+        }
+        
+        function styleStatusDropdown(selectElement, status) {
+            selectElement.classList.remove('status-Pendiente', 'status-Confirmado', 'status-Esperando-Repuestos', 'status-Otros', 'status-EJECUTADO', 'status-Confirmar-con-cliente', 'status-Repuesto-devuelto');
+            if (status) {
+                const statusClass = `status-${status.replace(/\s+/g, '-')}`;
+                selectElement.classList.add(statusClass);
+            }
+        }
+
+        function displayCurrency(value) {
+            if (value === undefined || value === null || value === '' || isNaN(value)) return 'N/A';
+            const numericValue = parseInt(String(value).replace(/\$|\./g, ''), 10);
+            if (isNaN(numericValue)) return 'N/A';
+            return new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', minimumFractionDigits: 0 }).format(numericValue);
+        }
+
+        function formatCurrency(input) {
+            let value = input.value.replace(/[^0-9]/g, '');
+            if (value === '') { input.value = ''; return; }
+            let numericValue = parseInt(value, 10);
+            value = new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', minimumFractionDigits: 0 }).format(numericValue);
+            input.value = value.replace('CLP', '').trim();
+        }
+
+        async function cargarTecnicos() {
+            try {
+                const snapshot = await db.collection('tecnicos').where('activo', '==', true).orderBy('nombre').get();
+                state.tecnicosCache = snapshot.docs.map(doc => doc.data().nombre);
+                populateTechnicianFilterSelect(); 
+            } catch (error) { console.error("Error al cargar técnicos: ", error); }
+        }
+
+        auth.onAuthStateChanged(async (user) => {
+            if (user) {
+                state.currentUser = user;
+                ui.loginContainer.style.display = 'none';
+                ui.mainContent.style.display = 'block';
+                ui.headerTitle.textContent = `Planificador: ${user.email.split('@')[0]}`;
+                await cargarTecnicos();
+                iniciarListenerServicios();
+                listenToNotifications();
+            } else {
+                state.currentUser = null;
+                ui.loginContainer.style.display = 'flex';
+                ui.mainContent.style.display = 'none';
+                if (unsubscribeServicios) unsubscribeServicios();
+                if (unsubscribeChat) unsubscribeChat();
+                if (unsubscribeNotificaciones) unsubscribeNotificaciones();
+            }
+        });
+
+        // --- FUNCIONES DE NOTIFICACIÓN ---
+        function listenToNotifications() {
+            if (!state.currentUser) return;
+            if (unsubscribeNotificaciones) unsubscribeNotificaciones();
+
+            unsubscribeNotificaciones = db.collection('notificaciones')
+                .where('userId', '==', state.currentUser.email)
+                .orderBy('timestamp', 'desc')
+                .onSnapshot(snapshot => {
+                    state.notificacionesCache = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    renderNotifications();
+                }, error => console.error("Error al escuchar notificaciones:", error));
+        }
+
+        function renderNotifications() {
+            const unreadCount = state.notificacionesCache.filter(n => !n.leido).length;
+            if (unreadCount > 0) { ui.notifCount.textContent = unreadCount; ui.notifCount.style.display = 'flex'; }
+            else { ui.notifCount.style.display = 'none'; }
+            ui.notifPanel.innerHTML = '';
+            if (state.notificacionesCache.length === 0) { ui.notifPanel.innerHTML = '<div class="notif-item"><p>No tienes notificaciones.</p></div>'; return; }
+            state.notificacionesCache.forEach(n => {
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'notif-item';
+                if (!n.leido) itemDiv.classList.add('unread');
+                itemDiv.dataset.notifId = n.id;
+                itemDiv.dataset.serviceId = n.serviceId;
+                itemDiv.innerHTML = `<p>${n.mensaje || 'Nueva actualización.'}</p><small>${formatTimestamp(n.timestamp)}</small>`;
+                ui.notifPanel.appendChild(itemDiv);
+            });
+        }
+        
+        ui.notifBellBtn.addEventListener('click', (e) => { e.stopPropagation(); ui.notifPanel.classList.toggle('visible'); });
+
+        ui.notifPanel.addEventListener('click', async (e) => {
+            const notifItem = e.target.closest('.notif-item');
+            if (!notifItem) return;
+            const notifId = notifItem.dataset.notifId;
+            const serviceId = notifItem.dataset.serviceId;
+            if (notifItem.classList.contains('unread')) await db.collection('notificaciones').doc(notifId).update({ leido: true });
+            const service = state.serviciosCache.find(s => s.id === serviceId);
+            if (service) openModal('service-modal', service);
+            else alert("Servicio no encontrado. Puede haber sido eliminado.");
+            ui.notifPanel.classList.remove('visible');
+        });
+        
+        document.addEventListener('click', (e) => {
+            if (ui.notifPanel.classList.contains('visible') && !ui.notifPanel.contains(e.target) && !ui.notifBellBtn.contains(e.target)) {
+                ui.notifPanel.classList.remove('visible');
+            }
+        });
+
+        // MEJORA: SE AGREGÓ limit(100) PARA ACELERAR LA CARGA DE LA TABLA
+        function iniciarListenerServicios() {
+            ui.tablaServiciosBody.innerHTML = `<tr><td colspan="14" style="text-align: center;">Cargando servicios...</td></tr>`;
+            unsubscribeServicios = db.collection('servicios')
+                .orderBy('timestamp', 'desc')
+                .limit(100) // <- AQUÍ ESTÁ LA MAGIA DE LA VELOCIDAD
+                .onSnapshot(snapshot => {
+                    state.serviciosCache = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    populateVendedorFilter(); populateTipoServicioFilter(); populateEstadoFilter();
+                    applyFiltersAndRender();
+            }, error => {
+                console.error("Error al escuchar servicios:", error);
+                ui.tablaServiciosBody.innerHTML = `<tr><td colspan="14" style="text-align: center; color: var(--danger);">Error al cargar datos.</td></tr>`;
+            });
+        }
+
+        function populateVendedorFilter() {
+            const vendedores = [...new Set(state.serviciosCache.map(s => s.vendedor).filter(Boolean))].sort();
+            const currentVal = ui.filtroVendedor.value;
+            ui.filtroVendedor.innerHTML = '<option value="todos">Todos</option>';
+            vendedores.forEach(v => ui.filtroVendedor.add(new Option(v.split('@')[0], v)));
+            ui.filtroVendedor.value = vendedores.includes(currentVal) ? currentVal : 'todos';
+        }
+        
+        function populateEstadoFilter() {
+            const estados = [...new Set(state.serviciosCache.map(s => s.estado).filter(Boolean))].sort();
+            const currentVal = ui.filtroEstado.value;
+            ui.filtroEstado.innerHTML = '<option value="todos">Todos</option>';
+            estados.forEach(e => ui.filtroEstado.add(new Option(e,e)));
+            ui.filtroEstado.value = estados.includes(currentVal) ? currentVal : 'todos';
+        }
+
+        function populateTipoServicioFilter() {
+            const tipos = [ "Canal Tradicional", "Descanso Turno", "Montaje", "Otro", "Post Venta", "Premontaje", "Proyección Asistencia", "Proyección Mantención", "Proyección Repuestos", "Puesta en Marcha", "Retail Asistencia", "Retail Mantencion", "Retail Repuestos", "Turno", "Vacaciones" ].sort();
+            const currentFilterVal = ui.filtroTipoServicio.value;
+            ui.filtroTipoServicio.innerHTML = '<option value="todos">Todos</option>';
+            tipos.forEach(t => ui.filtroTipoServicio.add(new Option(t, t)));
+            ui.filtroTipoServicio.value = tipos.includes(currentFilterVal) ? currentFilterVal : 'todos';
+            const currentModalVal = ui.modal.tipoServicioSelect.value;
+            ui.modal.tipoServicioSelect.innerHTML = '<option value="">Seleccione un tipo</option>';
+            tipos.forEach(t => ui.modal.tipoServicioSelect.add(new Option(t, t)));
+            ui.modal.tipoServicioSelect.value = tipos.includes(currentModalVal) ? currentModalVal : '';
+        }
+
+        function applyFiltersAndRender() {
+            const estadoFilter = ui.filtroEstado.value;
+            const vendedorFilter = ui.filtroVendedor.value;
+            const tipoServicioFilter = ui.filtroTipoServicio.value;
+            const tecnicoFilter = ui.filtroTecnico.value;
+            const searchTerm = ui.filtroBusqueda.value.toLowerCase();
+            
+            let result = state.serviciosCache.filter(s => {
+                const matchEstado = estadoFilter === 'todos' || s.estado === estadoFilter;
+                const matchVendedor = vendedorFilter === 'todos' || s.vendedor === vendedorFilter;
+                const matchTipoServicio = tipoServicioFilter === 'todos' || s.tipoServicio === tipoServicioFilter;
+                const matchSearch = searchTerm === '' ||
+                                    (s.numRequerimiento?.toLowerCase().includes(searchTerm)) ||
+                                    (s.numNV?.toLowerCase().includes(searchTerm)) ||
+                                    (s.cliente?.toLowerCase().includes(searchTerm)) ||
+                                    (s.vendedor?.toLowerCase().includes(searchTerm));
+                let matchTecnico = true;
+                if (tecnicoFilter !== 'todos') { matchTecnico = (s.tecnicos || []).includes(tecnicoFilter); }
+                return matchEstado && matchVendedor && matchTipoServicio && matchSearch && matchTecnico;
+            });
+
+            const col = state.sortConfig.column;
+            const order = state.sortConfig.order === 'asc' ? 1 : -1;
+            result.sort((a, b) => {
+                if (col === 'timestamp') {
+                    const valA = a[col]?.seconds || 0;
+                    const valB = b[col]?.seconds || 0;
+                    return (valA - valB) * order;
+                }
+                let valA = a[col] || ''; let valB = b[col] || '';
+                if (!isNaN(valA) && !isNaN(valB) && valA !== '' && valB !== '') return (parseFloat(valA) - parseFloat(valB)) * order;
+                return valA.toString().localeCompare(valB.toString(), 'es', { sensitivity: 'base' }) * order;
+            });
+            state.filteredServices = result;
+            renderAll();
+        }
+
+        function renderAll() { renderTable(); renderPagination(); updateSortIndicators(); }
+
+        // MEJORA: USO DE DOCUMENT FRAGMENT PARA RENDERIZADO MÁS LIMPIO
+        function renderTable() {
+            ui.tablaServiciosBody.innerHTML = '';
+            const servicesToRender = state.filteredServices;
+            if (servicesToRender.length === 0) {
+                ui.tablaServiciosBody.innerHTML = `<tr><td colspan="14" style="text-align: center;">No hay servicios que mostrar.</td></tr>`;
+                return;
+            }
+            
+            const fragmento = document.createDocumentFragment();
+            const getBadgeClass = (value) => {
+                switch (value) {
+                    case 'Sí': return 'badge-si'; case 'No': return 'badge-no';
+                    case 'Pendiente': return 'badge-pendiente'; default: return 'badge-na';
+                }
+            };
+            
+            const pageServices = servicesToRender.slice((state.pagination.currentPage - 1) * state.pagination.rowsPerPage, state.pagination.currentPage * state.pagination.rowsPerPage);
+            pageServices.forEach(s => {
+                const tr = document.createElement('tr');
+                tr.dataset.id = s.id;
+                if (s.observacionesPlanificacion && s.observacionesPlanificacion.trim() !== '') tr.classList.add('has-observation');
+                if (s.notificacionPara === 'planificador') tr.classList.add('fila-notificacion');
+
+                let reqContent = 'N/A';
+                if (s.numRequerimiento && s.numRequerimiento.startsWith('15')) {
+                    reqContent = `<a href="https://app.fixeat.cl/maquipan/services?tableSearch=${s.numRequerimiento}" target="_blank" class="req-link">${s.numRequerimiento}</a>`;
+                } else if (s.numRequerimiento) {
+                    reqContent = `<a href="http://st.maquipanst.com/maquipan/st2/admin.php?mod=ficha_tecnico&req=${s.numRequerimiento}" target="_blank" class="req-link">${s.numRequerimiento}</a>`;
+                }
+
+                let direccionCompleta = s.direccion || '';
+                if (s.comuna) direccionCompleta += `, ${s.comuna}`;
+                if (s.region) direccionCompleta += `, ${s.region}`;
+                let direccionContent = 'N/A';
+                if (direccionCompleta.trim() !== ', ') {
+                     const encodedDireccion = encodeURIComponent(direccionCompleta);
+                     direccionContent = `<a href="https://www.google.com/maps/search/?api=1&query=${encodedDireccion}" target="_blank" class="req-link">${direccionCompleta}</a>`;
+                }
+
+                const assignedTecnicos = s.tecnicos || [];
+                tr.innerHTML = `
+                    <td>${reqContent}${s.notificacionPara === 'planificador' ? `<span class="notification-dot" title="${s.notificacionMensaje || 'Nueva actualización'}"></span>` : ''}</td>
+                    <td>${s.numNV || 'N/A'}</td>
+                    <td class="cliente-cell">${s.cliente || 'N/A'}</td>
+                    <td class="cliente-cell">${direccionContent}</td>
+                    <td>${s.tipoServicio || 'N/A'}</td>
+                    <td>${formatTimestamp(s.timestamp)}</td> 
+                    <td><span class="status-badge ${getBadgeClass(s.tieneRepuestos)}">${s.tieneRepuestos || 'N/A'}</span></td>
+                    <td><span class="status-badge ${getBadgeClass(s.repuestosDespachados)}">${s.repuestosDespachados || 'N/A'}</span></td>
+                    <td><input type="date" name="fechaAsignada" value="${s.fechaAsignada || ''}"></td>
+                    <td><input type="time" name="horaTraslado" value="${s.horaTraslado || ''}"></td>
+                    <td><input type="time" name="horaInicio" value="${s.horaInicio || ''}"></td>
+                    <td><input type="time" name="horaTermino" value="${s.horaTermino || ''}"></td>
+                    <td>
+                        <div class="tecnico-display">
+                            <div class="tecnico-names">${assignedTecnicos.join(', ') || 'No asignado'}</div>
+                            <button class="btn-select-tecnicos" data-id="${s.id}">Seleccionar</button>
+                        </div>
+                    </td>
+                    <td>
+                        <select name="estado">
+                            <option value="Pendiente" ${s.estado === 'Pendiente' ? 'selected' : ''}>Pendiente</option>
+                            <option value="Llamar a cliente" ${s.estado === 'Llamar a cliente' ? 'selected' : ''}>Llamar a cliente</option>
+                            <option value="Confirmado" ${s.estado === 'Confirmado' ? 'selected' : ''}>Confirmado</option>
+                            <option value="EJECUTADO" ${s.estado === 'EJECUTADO' ? 'selected' : ''}>EJECUTADO</option>
+                            <option value="Esperando Repuestos" ${s.estado === 'Esperando Repuestos' ? 'selected' : ''}>Esperando Repuestos</option>
+                            <option value="Repuesto devuelto" ${s.estado === 'Repuesto devuelto' ? 'selected' : ''}>Repuesto devuelto</option>
+                            <option value="Otros" ${s.estado === 'Otros' ? 'selected' : ''}>Otros</option>
+                        </select>
+                    </td>
+                    <td><div class="action-cell">
+                        <button class="btn-detail" data-id="${s.id}" title="Editar">Editar</button>
+                        <button class="btn-add-day" data-id="${s.id}" style="background-color: var(--success); color: white;">+ Día</button>
+                        <button class="btn-delete" data-id="${s.id}">Eliminar</button>
+                    </div></td>`;
+                
+                fragmento.appendChild(tr);
+                const statusSelect = tr.querySelector('select[name="estado"]');
+                styleStatusDropdown(statusSelect, s.estado);
+            });
+            ui.tablaServiciosBody.appendChild(fragmento);
+        }
+
+        function renderPagination() {
+            const totalServices = state.filteredServices.length;
+            const { currentPage, rowsPerPage } = state.pagination;
+            const totalPages = Math.ceil(totalServices / rowsPerPage);
+            const start = (currentPage - 1) * rowsPerPage + 1;
+            const end = Math.min(currentPage * rowsPerPage, totalServices);
+            ui.resultsInfo.textContent = totalServices > 0 ? `Mostrando ${start}-${end} de ${totalServices} resultados.` : 'No hay resultados.';
+            ui.paginationControls.innerHTML = '';
+            if (totalPages <= 1) return;
+            const createButton = (text, page, isDisabled = false, isActive = false) => {
+                const btn = document.createElement('button');
+                btn.innerHTML = text; btn.disabled = isDisabled;
+                if (isActive) btn.classList.add('active');
+                btn.addEventListener('click', () => { state.pagination.currentPage = page; renderAll(); });
+                return btn;
+            };
+            ui.paginationControls.appendChild(createButton('‹', currentPage - 1, currentPage === 1));
+            for (let i = 1; i <= totalPages; i++) ui.paginationControls.appendChild(createButton(i, i, false, i === currentPage));
+            ui.paginationControls.appendChild(createButton('›', currentPage + 1, currentPage === totalPages));
+        }
+
+        function updateSortIndicators() {
+            document.querySelectorAll('th[data-sort]').forEach(header => {
+                const indicator = header.querySelector('.sort-indicator');
+                if(!indicator) return;
+                const column = header.dataset.sort;
+                indicator.textContent = (column === state.sortConfig.column) ? (state.sortConfig.order === 'asc' ? ' ▲' : ' ▼') : '';
+            });
+        }
+
+        async function openModal(modalId, service) {
+            if (modalId === 'service-modal' && service) {
+                if (service.notificacionPara === 'planificador') {
+                    try { await actualizarServicio(service.id, { notificacionPara: '', notificacionMensaje: '' }); } 
+                    catch (err) { console.error("Error al marcar la notificación como leída:", err); }
+                }
+                const m = ui.modal;
+                m.titleReqNumDisplay.textContent = service.numRequerimiento || 'N/A';
+                m.numRequerimientoInput.value = service.numRequerimiento || '';
+                m.numNVInput.value = service.numNV || '';
+                m.clienteInput.value = service.cliente || '';
+                m.montoServicioInput.value = displayCurrency(service.montoServicio).replace('$','').trim();
+                m.tipoServicioSelect.value = service.tipoServicio || '';
+                m.regionSelect.value = service.region || '';
+                cargarComunasModal(service.region || '');
+                m.comunaSelect.value = service.comuna || '';
+                m.direccionInput.value = service.direccion || '';
+                m.vendedorInput.value = service.vendedor || '';
+                m.contactoInput.value = service.nomContacto || '';
+                m.telefonoInput.value = service.numContacto || '';
+                m.tieneRepuestosSelect.value = service.tieneRepuestos || 'No';
+                m.repDespachadosSelect.value = service.repuestosDespachados || 'No';
+                m.estadoDisplay.textContent = service.estado || 'N/A';
+                m.tecnicoDisplay.textContent = (service.tecnicos || []).join(', ') || 'Sin Asignar';
+                m.fechaAsignadaDisplay.textContent = service.fechaAsignada || 'N/A';
+                m.horaTrasladoDisplay.textContent = service.horaTraslado || 'N/A';
+                m.horaInicioDisplay.textContent = service.horaInicio || 'N/A';
+                m.horaTerminoDisplay.textContent = service.horaTermino || 'N/A';
+                m.fechaSolicitudDisplay.textContent = formatTimestamp(service.timestamp);
+                m.fechaEdicionDisplay.textContent = service.fechaEdicion ? formatTimestamp(service.fechaEdicion) : 'Sin ediciones';
+                m.infoServicioTextarea.value = service.infoServicio || '';
+                m.observaciones.value = service.observacionesPlanificacion || '';
+                m.guardarBtn.dataset.serviceId = service.id;
+                
+                listenToChat(service.id);
+                ui.modal.chatForm.dataset.serviceId = service.id;
+
+            } else if (modalId === 'tecnico-select-modal') {
+                const serviceData = state.serviciosCache.find(s => s.id === service);
+                if (!serviceData) return;
+                const assignedTecnicos = serviceData.tecnicos || [];
+                ui.tecnicoModal.list.innerHTML = '';
+                state.tecnicosCache.forEach(tecnico => {
+                    const isChecked = assignedTecnicos.includes(tecnico);
+                    const itemId = `tecnico-check-${tecnico.replace(/\s+/g, '-')}`;
+                    ui.tecnicoModal.list.innerHTML += `<div class="tecnico-check-item"><input type="checkbox" id="${itemId}" value="${tecnico}" ${isChecked ? 'checked' : ''}><label for="${itemId}">${tecnico}</label></div>`;
+                });
+                ui.tecnicoModal.guardarBtn.dataset.serviceId = service;
+            } else if (modalId === 'bulk-add-modal') {
+                ui.bulkAddModal.pasteArea.value = '';
+            }
+            document.getElementById(modalId).classList.add('visible');
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('visible');
+             if (unsubscribeChat) { unsubscribeChat(); unsubscribeChat = null; }
+        }
+
+        function listenToChat(serviceId) {
+            if (unsubscribeChat) unsubscribeChat();
+            unsubscribeChat = db.collection('servicios').doc(serviceId).collection('chat')
+                .orderBy('timestamp', 'asc')
+                .onSnapshot(snapshot => renderChatMessages(snapshot.docs), 
+                error => console.error("Error al escuchar chat:", error));
+        }
+
+        function renderChatMessages(messages) {
+            ui.modal.chatHistory.innerHTML = '';
+            if (!state.currentUser) return;
+            const plannerEmails = ['cpimentel@maquipan.cl', 'mehlers@maquipan.cl'];
+            messages.forEach(doc => {
+                const msg = doc.data();
+                const msgDiv = document.createElement('div');
+                const senderName = msg.remitente ? msg.remitente.split('@')[0] : 'Anónimo';
+                const isPlanner = plannerEmails.includes(msg.remitente);
+                msgDiv.classList.add('chat-message', isPlanner ? 'planificador' : 'ejecutiva');
+                msgDiv.innerHTML = `<span class="sender">${senderName}</span><p>${msg.mensaje}</p>`;
+                ui.modal.chatHistory.appendChild(msgDiv);
+            });
+            ui.modal.chatHistory.scrollTop = ui.modal.chatHistory.scrollHeight;
+        }
+
+        // --- LISTENERS CON DEBOUNCE PARA BÚSQUEDA ---
+        ui.loginForm.addEventListener('submit', (e) => { e.preventDefault(); auth.signInWithEmailAndPassword(ui.emailInput.value, ui.passwordInput.value).catch(err => { ui.errorMessage.textContent = 'Error: Credenciales incorrectas.'; ui.errorMessage.style.display = 'block'; }); });
+        ui.logoutButton.addEventListener('click', () => auth.signOut());
+
+        function applyTheme(isDark) { document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light'); localStorage.setItem('theme', isDark ? 'dark' : 'light'); }
+        ui.themeToggle.addEventListener('change', (e) => applyTheme(e.target.checked));
+        const savedTheme = localStorage.getItem('theme') || 'dark';
+        applyTheme(savedTheme === 'dark');
+        ui.themeToggle.checked = savedTheme === 'dark';
+
+        ui.modalCloseBtns.forEach(btn => btn.addEventListener('click', () => closeModal(btn.dataset.modalId)));
+        document.querySelectorAll('.modal-overlay').forEach(overlay => overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(overlay.id); }));
+        
+        document.querySelectorAll('th[data-sort]').forEach(header => {
+            header.addEventListener('click', () => {
+                const column = header.dataset.sort;
+                state.sortConfig.order = (state.sortConfig.column === column && state.sortConfig.order === 'asc') ? 'desc' : 'asc';
+                state.sortConfig.column = column;
+                applyFiltersAndRender();
+            });
+        });
+        
+        ui.filtroEstado.addEventListener('change', () => { state.pagination.currentPage = 1; applyFiltersAndRender(); });
+        ui.filtroVendedor.addEventListener('change', () => { state.pagination.currentPage = 1; applyFiltersAndRender(); });
+        ui.filtroTipoServicio.addEventListener('change', () => { state.pagination.currentPage = 1; applyFiltersAndRender(); });
+        ui.filtroTecnico.addEventListener('change', () => { state.pagination.currentPage = 1; applyFiltersAndRender(); });
+        
+        // APLICANDO DEBOUNCE AL BUSCADOR (Espera 300ms)
+        const busquedaOptimizada = debounce(() => {
+            state.pagination.currentPage = 1;
+            applyFiltersAndRender();
+        }, 300);
+        ui.filtroBusqueda.addEventListener('input', busquedaOptimizada);
+
+        ui.tablaServiciosBody.addEventListener('change', async (e) => {
+            const target = e.target;
+            const validNames = ['estado', 'fechaAsignada', 'horaTraslado', 'horaInicio', 'horaTermino'];
+            if (!validNames.includes(target.name)) return;
+            const id = target.closest('tr').dataset.id;
+            const service = state.serviciosCache.find(s => s.id === id);
+            if (!service) return;
+            const datos = { [target.name]: target.value };
+            await actualizarServicio(id, datos);
+        });
+        
+        ui.tablaServiciosBody.addEventListener('click', async (e) => {
+            const button = e.target.closest('button');
+            if (button) {
+                const serviceId = button.dataset.id;
+                if (!serviceId) return;
+                if (button.classList.contains('btn-delete')) { if (confirm('¿Seguro que quieres eliminar este servicio?')) await eliminarServicio(serviceId); } 
+                else if (button.classList.contains('btn-detail')) { const service = state.serviciosCache.find(s => s.id === serviceId); if (service) openModal('service-modal', service); } 
+                else if (button.classList.contains('btn-select-tecnicos')) { openModal('tecnico-select-modal', serviceId); } 
+                else if (button.classList.contains('btn-add-day')) { await duplicarServicio(serviceId); }
+            } else if (e.target.closest('a')) { return; }
+        });
+        
+        ui.modal.guardarBtn.addEventListener('click', async () => {
+            const id = ui.modal.guardarBtn.dataset.serviceId;
+            const service = state.serviciosCache.find(s => s.id === id);
+            if (!service) return;
+            
+            const datosParaActualizar = {
+                numRequerimiento: ui.modal.numRequerimientoInput.value,
+                cliente: ui.modal.clienteInput.value,
+                numNV: ui.modal.numNVInput.value,
+                montoServicio: ui.modal.montoServicioInput.value.replace(/\$|\./g, ''),
+                tipoServicio: ui.modal.tipoServicioSelect.value,
+                region: ui.modal.regionSelect.value,
+                comuna: ui.modal.comunaSelect.value,
+                direccion: ui.modal.direccionInput.value,
+                vendedor: ui.modal.vendedorInput.value,
+                nomContacto: ui.modal.contactoInput.value,
+                numContacto: ui.modal.telefonoInput.value,
+                tieneRepuestos: ui.modal.tieneRepuestosSelect.value,
+                repuestosDespachados: ui.modal.repDespachadosSelect.value,
+                infoServicio: ui.modal.infoServicioTextarea.value,
+                observacionesPlanificacion: ui.modal.observaciones.value,
+            };
+            
+            await actualizarServicio(id, datosParaActualizar);
+            if (datosParaActualizar.observacionesPlanificacion && datosParaActualizar.observacionesPlanificacion !== (service.observacionesPlanificacion || '')) {
+                const notificacionData = { userId: service.vendedor, serviceId: service.id, serviceReqNum: service.numRequerimiento, mensaje: `El planificador añadió una observación al Req #${service.numRequerimiento}.`, timestamp: firebase.firestore.FieldValue.serverTimestamp(), leido: false };
+                await db.collection('notificaciones').add(notificacionData);
+            }
+            alert('Servicio actualizado correctamente.');
+            closeModal('service-modal');
+        });
+        
+        ui.modal.chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const serviceId = e.target.dataset.serviceId;
+            const mensaje = ui.modal.chatInput.value.trim();
+            if (!mensaje || !serviceId || !state.currentUser) return;
+            const messageData = { remitente: state.currentUser.email, mensaje: mensaje, timestamp: firebase.firestore.FieldValue.serverTimestamp() };
+            try {
+                await db.collection('servicios').doc(serviceId).collection('chat').add(messageData);
+                const service = state.serviciosCache.find(s => s.id === serviceId);
+                const notificacionData = { userId: service.vendedor, serviceId: service.id, serviceReqNum: service.numRequerimiento, mensaje: `Nuevo mensaje del planificador en Req #${service.numRequerimiento}.`, timestamp: firebase.firestore.FieldValue.serverTimestamp(), leido: false };
+                await db.collection('notificaciones').add(notificacionData);
+                ui.modal.chatInput.value = '';
+            } catch (error) { console.error("Error:", error); alert('No se pudo enviar el mensaje.'); }
+        });
+
+        ui.tecnicoModal.guardarBtn.addEventListener('click', async () => {
+            const id = ui.tecnicoModal.guardarBtn.dataset.serviceId;
+            const selectedTecnicos = Array.from(ui.tecnicoModal.list.querySelectorAll('input:checked')).map(input => input.value);
+            await actualizarServicio(id, { tecnicos: selectedTecnicos });
+            closeModal('tecnico-select-modal');
+        });
+        ui.tecnicoModal.cancelarBtn.addEventListener('click', () => closeModal('tecnico-select-modal'));
+        
+        ui.abrirModalMasivoBtn.addEventListener('click', () => openModal('bulk-add-modal'));
+
+        ui.bulkAddModal.saveBtn.addEventListener('click', async () => {
+            const pasteData = ui.bulkAddModal.pasteArea.value.trim();
+            if (!pasteData) return alert('El área de texto está vacía.');
+
+            const rows = pasteData.split('\n');
+            const batch = db.batch();
+            let servicesToCreate = 0;
+            const errors = [];
+
+            rows.forEach((row, index) => {
+                if (!row.trim()) return;
+                const cols = row.split('\t');
+                const [numRequerimiento, numNV, cliente, montoServicio, tipoServicio, vendedor, fechaAsignada, horaTraslado, horaInicio, horaTermino, tecnicoInput, infoServicio] = cols.map(c => c ? c.trim() : '');
+                if (!cliente) { errors.push(`Fila ${index + 1}: El campo "Cliente" es obligatorio.`); return; }
+                const tecnicos = tecnicoInput ? tecnicoInput.split(',').map(t => t.trim()) : [];
+                const newServiceRef = db.collection('servicios').doc();
+                const serviceData = {
+                    numRequerimiento, numNV, cliente, 
+                    montoServicio: montoServicio.replace(/\$|\./g, ''),
+                    tipoServicio, vendedor, fechaAsignada,
+                    horaTraslado, horaInicio, horaTermino,
+                    tecnicos, infoServicio,
+                    estado: 'Pendiente', timestamp: firebase.firestore.FieldValue.serverTimestamp(), fechaEdicion: firebase.firestore.FieldValue.serverTimestamp(), tieneRepuestos: 'No', repuestosDespachados: 'N/A',
+                };
+                if (serviceData.fechaAsignada && serviceData.tecnicos.length > 0) { serviceData.estado = 'Confirmado'; }
+                batch.set(newServiceRef, serviceData);
+                servicesToCreate++;
+            });
+
+            if (errors.length > 0) return alert(`Se encontraron errores:\n\n${errors.join('\n')}`);
+            if (servicesToCreate === 0) return alert('No hay servicios válidos para guardar.');
+
+            try { await batch.commit(); alert(`${servicesToCreate} servicio(s) agregado(s).`); closeModal('bulk-add-modal'); } 
+            catch (error) { console.error("Error masivo: ", error); alert("Error al intentar guardar."); }
+        });
+        
+        ui.exportarCsvBtn.addEventListener('click', () => {
+             if (state.filteredServices.length === 0) return alert('No hay servicios para exportar.');
+            const headers = ["Nº Requerimiento", "Nº NV", "Cliente", "Monto Servicio", "Tipo Servicio", "Vendedor", "Tiene Repuestos", "Repuestos Despachados", "Fecha Creación", "Fecha Última Edición", "Fecha Asignada", "Hora Traslado", "Hora Inicio", "Hora Término", "Técnico(s) Asignado(s)", "Estado", "Info. Servicio", "Observaciones Planificación", "Región", "Comuna", "Dirección", "Contacto", "Teléfono"];
+            const rows = state.filteredServices.map(s => [
+                s.numRequerimiento, s.numNV, s.cliente, displayCurrency(s.montoServicio), s.tipoServicio, s.vendedor, s.tieneRepuestos, s.repuestosDespachados, s.timestamp ? formatTimestamp(s.timestamp) : '', s.fechaEdicion ? formatTimestamp(s.fechaEdicion) : '', s.fechaAsignada, s.horaTraslado, s.horaInicio, s.horaTermino, (s.tecnicos || []).join('; '), s.estado, s.infoServicio, s.observacionesPlanificacion, s.region, s.comuna, s.direccion, s.nomContacto, s.numContacto
+            ].map(val => `"${(val || '').toString().replace(/"/g, '""')}"`));
+            const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+            const link = document.createElement('a'); link.setAttribute('href', encodeURI(csvContent)); link.setAttribute('download', `servicios_planificador_${new Date().toLocaleDateString('es-CL')}.csv`); link.click();
+        });
+
+    </script>
 </body>
 </html>
