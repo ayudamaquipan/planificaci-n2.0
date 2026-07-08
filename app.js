@@ -88,10 +88,19 @@ document.getElementById('abrir-modal-masivo')?.addEventListener('click', () => {
 // 5. CARGA DE DATOS Y RENDERIZADO DE LA TABLA
 // =====================================================================
 function cargarRequerimientos() {
+    // ⚠️ REVISA ESTO: Si en tu Firebase la colección se llama distinto, 
+    // cambia la palabra "requerimientos" por el nombre real.
     const referencia = collection(db, "requerimientos");
-    const consulta = query(referencia, orderBy("timestamp", "desc"), limit(100));
+    
+    // Quitamos el orderBy("timestamp") para evitar que Firestore esconda 
+    // los registros que no tienen fecha.
+    const consulta = query(referencia, limit(100));
+
+    console.log("⏳ Solicitando datos a Firebase...");
 
     onSnapshot(consulta, (snapshot) => {
+        console.log("✅ Datos recibidos. Cantidad de servicios encontrados:", snapshot.size);
+        
         todosLosRequerimientos = [];
         snapshot.forEach((doc) => {
             todosLosRequerimientos.push({ id: doc.id, ...doc.data() });
@@ -101,63 +110,9 @@ function cargarRequerimientos() {
         actualizarListasDesplegables(todosLosRequerimientos);
         
     }, (error) => {
-        console.error("Error al obtener datos:", error);
-        if(error.code === 'permission-denied') {
-            alert("⚠️ Firebase está bloqueando los datos. Por favor revisa las Reglas en Firestore (deben estar en 'Publicar').");
-        }
+        console.error("❌ Error al obtener datos:", error);
     });
 }
-
-function renderizarTabla(lista) {
-    const tbody = document.getElementById('tabla-servicios');
-    if (!tbody) return;
-    
-    tbody.innerHTML = ''; 
-    const fragmento = document.createDocumentFragment();
-
-    lista.forEach(req => {
-        const tr = document.createElement('tr');
-        const claseEstado = req.estado ? req.estado.toLowerCase().replace(/ /g, '-') : 'na';
-        
-        let fechaSolicitud = '';
-        if (req.timestamp) {
-            fechaSolicitud = typeof req.timestamp.toDate === 'function' 
-                ? req.timestamp.toDate().toLocaleDateString() 
-                : new Date(req.timestamp).toLocaleDateString();
-        }
-
-        tr.innerHTML = `
-            <td>${req.numRequerimiento || ''}</td>
-            <td>${req.numNV || ''}</td>
-            <td class="cliente-cell">${req.cliente || ''}</td>
-            <td>${req.direccion || ''}</td>
-            <td>${req.tipoServicio || ''}</td>
-            <td>${fechaSolicitud}</td>
-            <td>${req.tieneRepuestos || ''}</td>
-            <td>${req.repuestosDespachados || ''}</td>
-            <td>${req.fechaAsignada || ''}</td>
-            <td>${req.horaTraslado || ''}</td>
-            <td>${req.horaInicio || ''}</td>
-            <td>${req.horaTermino || ''}</td>
-            <td>${(req.tecnicos || []).join(', ') || ''}</td>
-            <td><span class="status-badge badge-${claseEstado}">${req.estado || 'N/A'}</span></td>
-            <td class="action-cell">
-                <button class="icon-btn" onclick="abrirModalServicio('${req.id}')">✏️ Editar</button>
-            </td>
-        `;
-        fragmento.appendChild(tr);
-    });
-
-    tbody.appendChild(fragmento);
-    const resultsInfo = document.getElementById('results-info');
-    if(resultsInfo) resultsInfo.innerText = `Mostrando ${lista.length} servicios`;
-}
-
-window.abrirModalServicio = function(id) {
-    // Aquí puedes cargar los detalles en el modal usando el ID
-    document.getElementById('service-modal').style.display = 'flex';
-};
-
 // =====================================================================
 // 6. SISTEMA DE FILTROS DINÁMICOS
 // =====================================================================
