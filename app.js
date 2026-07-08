@@ -1,134 +1,256 @@
-// app.js
-
-// 1. IMPORTACIONES MODULARES (Reduce el peso del código cargado)
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { 
-    getFirestore, enableIndexedDbPersistence, collection, query, orderBy, limit, startAfter, onSnapshot 
-} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
-
-// 2. CONFIGURACIÓN FIREBASE
-const firebaseConfig = {
-    apiKey: "AIzaSyA9tUGGmMqk85Hljw8H1XoTfX2U5iQu85c",
-  authDomain: "control-de-servicios-b8e34.firebaseapp.com",
-  projectId: "control-de-servicios-b8e34",
-  storageBucket: "control-de-servicios-b8e34.firebasestorage.app",
-  messagingSenderId: "28935045448",
-  appId: "1:28935045448:web:cf61d09b606951f000b37d",
-  measurementId: "G-FSCT1H3VJJ"
-};
-
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-const auth = getAuth(app);
-
-// 3. HABILITAR PERSISTENCIA OFFLINE (Caché local ultrarrápida)
-enableIndexedDbPersistence(db).catch((err) => {
-    if (err.code == 'failed-precondition') {
-        console.warn('Múltiples pestañas abiertas, la persistencia offline funciona en una a la vez.');
-    } else if (err.code == 'unimplemented') {
-        console.warn('El navegador no soporta persistencia offline.');
-    }
-});
-
-// 4. MEJORA: DEBOUNCE PARA EL BUSCADOR (Evita que el navegador se congele al teclear)
-function debounce(func, espera) {
-    let timeout;
-    return function ejecutandoFuncion(...args) {
-        const masTarde = () => {
-            clearTimeout(timeout);
-            func(...args);
-        };
-        clearTimeout(timeout);
-        timeout = setTimeout(masTarde, espera);
-    };
-}
-
-// Suponiendo que el ID de tu input de búsqueda es 'filtro-busqueda'
-const inputBusqueda = document.getElementById('filtro-busqueda');
-if (inputBusqueda) {
-    inputBusqueda.addEventListener('input', debounce((e) => {
-        // Tu lógica actual de filtrado de arreglos va aquí
-        console.log("Filtrando tabla por:", e.target.value);
-    }, 300)); // Espera 300ms después de que dejes de teclear
-}
-
-// 5. MEJORA: RENDERIZADO POR BLOQUES (DocumentFragment)
-function renderizarTabla(listaRequerimientos) {
-    const tbody = document.querySelector('table tbody');
-    tbody.innerHTML = ''; 
+<!DOCTYPE html>
+<html lang="es" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portal del Planificador Unificado</title>
     
-    // Crear un fragmento en memoria
-    const fragmento = document.createDocumentFragment();
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
 
-    listaRequerimientos.forEach(req => {
-        const tr = document.createElement('tr');
-        
-        // Pega aquí la lógica de tu tabla. Ejemplo básico:
-        tr.innerHTML = `
-            <td>${req.numRequerimiento || ''}</td>
-            <td class="cliente-cell">${req.cliente || ''}</td>
-            <td>
-                <span class="status-badge badge-${req.estado ? req.estado.toLowerCase().replace(/ /g, '-') : 'na'}">
-                    ${req.estado || 'N/A'}
-                </span>
-            </td>
-            `;
-        
-        fragmento.appendChild(tr);
-    });
+    <div id="login-container">
+        <div class="card login-card">
+            <h2>Acceso de Planificador</h2>
+            <form id="login-form">
+                <label for="email">Correo Electrónico</label>
+                <input type="email" id="email" required>
+                <label for="password">Contraseña</label>
+                <input type="password" id="password" autocomplete="current-password" required>
+                <button type="submit" style="margin-top: 1rem;">Acceder</button>
+            </form>
+            <p id="error-message"></p>
+        </div>
+    </div>
 
-    // Inyecta las 50 filas de un solo golpe, evitando 50 repintados de pantalla
-    tbody.appendChild(fragmento);
-}
+    <div id="main-content" style="display: none;">
+        <div class="container">
+             <div class="header-controls">
+                <h1 id="header-title">Portal del Planificador</h1>
+                <div class="action-buttons">
+                    <div class="notification-bell">
+                        <button id="notif-bell-btn" aria-label="Notificaciones">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+                        </button>
+                        <span id="notif-count"></span>
+                        <div id="notif-panel"></div>
+                    </div>
+                    <button id="logout-button" class="icon-btn logout">Cerrar Sesión</button>
+                    <div class="theme-switch-wrapper">
+                        <label class="theme-switch">
+                            <input type="checkbox" id="theme-toggle">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
 
-// 6. MEJORA: PAGINACIÓN DESDE EL SERVIDOR DE FIREBASE
-let ultimoDocVisible = null;
+            <div class="card">
+                <div class="filter-header" id="toggle-filters-btn">
+                    <h2>🛠 Filtros y Controles</h2>
+                    <span class="toggle-icon">▼</span>
+                </div>
+            
+                <div id="filter-wrapper">
+                    <div class="filtros-container">
+                        <div>
+                            <label for="filtro-busqueda">Buscar</label>
+                            <input type="text" id="filtro-busqueda" placeholder="Nº Req, Cliente, etc.">
+                        </div>
+                        <div>
+                            <label for="filtro-estado">Filtrar por estado</label>
+                            <select id="filtro-estado">
+                                <option value="todos">Todos</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="filtro-vendedor">Filtrar por vendedor</label>
+                            <select id="filtro-vendedor">
+                                <option value="todos">Todos</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="filtro-tipo-servicio">Filtrar por Tipo Servicio</label>
+                            <select id="filtro-tipo-servicio">
+                                <option value="todos">Todos</option>
+                            </select>
+                        </div>
+                         <div>
+                            <label for="filtro-tecnico">Filtrar por Técnico</label>
+                            <select id="filtro-tecnico">
+                                <option value="todos">Todos</option>
+                            </select>
+                        </div>
+                        
+                        <div>
+                            <label>&nbsp;</label>
+                            <button id="abrir-modal-masivo" class="icon-btn" style="width: 100%; justify-content: center;">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M14 8a1 1 0 0 1-1 1H9v4a1 1 0 0 1-2 0V9H3a1 1 0 0 1 0-2h4V3a1 1 0 0 1 2 0v4h4a1 1 0 0 1 1 1z"/></svg>
+                                    Masivo
+                            </button>
+                        </div>
+                        <div>
+                            <label>&nbsp;</label>
+                            <button id="exportar-csv" class="icon-btn" style="width: 100%; justify-content: center;">
+                                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 20 20"><path d="M14.707 7.293a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L9 10.586V3a1 1 0 112 0v7.586l2.707-2.707a1 1 0 011.414 0zM4 14a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1z"></path></svg>
+                                    CSV
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-function cargarRequerimientos(paginaSiguiente = false) {
-    let referencia = collection(db, "requerimientos");
-    // Traemos solo los últimos 50 registros para carga inmediata
-    let consulta = query(referencia, orderBy("timestamp", "desc"), limit(50));
+            <div class="card">
+                 <h2>Servicios Registrados</h2>
+                 <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th data-sort="numRequerimiento">Nº Req.<span class="sort-indicator"></span></th>
+                                <th data-sort="numNV">Nº NV<span class="sort-indicator"></span></th>
+                                <th data-sort="cliente">Cliente<span class="sort-indicator"></span></th>
+                                <th data-sort="direccion">Dirección Completa<span class="sort-indicator"></span></th>
+                                <th data-sort="tipoServicio">Tipo Servicio<span class="sort-indicator"></span></th>
+                                <th data-sort="timestamp">Fecha Creación<span class="sort-indicator"></span></th> 
+                                <th>Tiene Rep.</th>
+                                <th>Rep. Desp.</th>
+                                <th>Fecha Asignada</th>
+                                <th>H. Traslado</th>
+                                <th>H. Inicio</th>
+                                <th>H. Término</th>
+                                <th>Técnico(s)</th>
+                                <th>Estado</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabla-servicios"></tbody>
+                    </table>
+                </div>
+                <div class="table-footer">
+                    <span id="results-info"></span>
+                    <div id="pagination-controls" class="pagination-controls"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="modal-overlay" id="service-modal">
+        <div class="modal-container">
+            <div class="modal-header">
+                <h2 id="modal-title-req-num">Servicio: Req #<span id="modal-req-num-display"></span></h2>
+                <button class="modal-close-btn" data-modal-id="service-modal">×</button>
+            </div>
+            
+            <div class="modal-body">
+                <div class="modal-details-section">
+                    <div class="detail-grid">
+                        <div class="detail-item"><strong>Nº Req:</strong> <input type="text" id="modal-numRequerimiento-input" data-field="numRequerimiento"></div>
+                        <div class="detail-item"><strong>Nº NV:</strong> <input type="text" id="modal-numNV-input" data-field="numNV"></div>
+                        <div class="detail-item"><strong>Cliente:</strong> <input type="text" id="modal-cliente-input" data-field="cliente"></div>
+                        <div class="detail-item">
+                            <strong>Monto Servicio:</strong>
+                            <div class="currency-input"><input type="text" id="modal-montoServicio-input" data-field="montoServicio" onkeyup="formatCurrency(this)"></div>
+                        </div>
+                        <div class="detail-item">
+                            <strong>Tipo Servicio:</strong>
+                            <select id="modal-tipoServicio-select" data-field="tipoServicio"><option value="">Seleccione un tipo</option></select>
+                        </div>
+                        
+                        <div class="detail-item">
+                            <strong>Región:</strong>
+                            <select id="modal-region-select" data-field="region"><option value="">Seleccione Región</option></select>
+                        </div>
+                        <div class="detail-item">
+                            <strong>Comuna:</strong>
+                            <select id="modal-comuna-select" data-field="comuna"><option value="">Seleccione Comuna</option></select>
+                        </div>
+                        <div class="detail-item full-width"><strong>Dirección (Calle/Núm):</strong> <input type="text" id="modal-direccion-input" data-field="direccion"></div>
+                        <div class="detail-item"><strong>Vendedor:</strong> <input type="email" id="modal-vendedor-input" data-field="vendedor"></div>
+                        <div class="detail-item"><strong>Contacto:</strong> <input type="text" id="modal-contacto-input" data-field="nomContacto"></div>
+                        <div class="detail-item"><strong>Teléfono:</strong> <input type="text" id="modal-telefono-input" data-field="numContacto"></div>
+                        <div class="detail-item">
+                            <strong>Tiene Repuestos:</strong>
+                            <select id="modal-tieneRepuestos-select" data-field="tieneRepuestos">
+                                <option value="Sí">Sí</option><option value="No">No</option><option value="N/A">N/A</option>
+                            </select>
+                        </div>
+                        <div class="detail-item">
+                            <strong>Repuestos Despachados:</strong>
+                            <select id="modal-repDespachados-select" data-field="repuestosDespachados">
+                                <option value="Sí">Sí</option><option value="No">No</option><option value="N/A">N/A</option>
+                            </select>
+                        </div>
+                        <div class="detail-item"><strong>Fecha Asignada:</strong> <span id="modal-fechaAsignada"></span></div>
+                        <div class="detail-item"><strong>Hora Traslado:</strong> <span id="modal-horaTraslado"></span></div>
+                        <div class="detail-item"><strong>Hora Inicio:</strong> <span id="modal-horaInicio"></span></div>
+                        <div class="detail-item"><strong>Hora Término:</strong> <span id="modal-horaTermino"></span></div>
+                        <div class="detail-item"><strong>Técnico(s) Asignado(s):</strong> <span id="modal-tecnico"></span></div>
+                        <div class="detail-item"><strong>Estado Actual:</strong> <span id="modal-estado"></span></div>
+                        <div class="detail-item full-width">
+                            <strong>Info. Servicio:</strong>
+                            <textarea id="modal-info-servicio-textarea" rows="3" data-field="infoServicio"></textarea>
+                        </div>
+                        <div class="detail-item"><strong>Fecha Creación:</strong> <span id="modal-fecha-solicitud"></span></div>
+                        <div class="detail-item"><strong>Última Edición:</strong> <span id="modal-fecha-edicion"></span></div>
+                        <div class="detail-item full-width">
+                            <strong>Observaciones de Planificación:</strong>
+                            <textarea id="modal-observaciones" rows="3" data-field="observacionesPlanificacion"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-chat-section">
+                    <h4>Chat del Servicio</h4>
+                    <div id="modal-chat-history"></div>
+                    <form id="modal-chat-form">
+                        <input type="text" id="modal-chat-input" placeholder="Escribe un mensaje..." required>
+                        <button type="submit" aria-label="Enviar mensaje">Enviar</button>
+                    </form>
+                </div>
+            </div>
+            
+            <div class="modal-footer">
+                <button id="modal-guardar-btn">Guardar Cambios</button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="modal-overlay" id="tecnico-select-modal">
+        <div class="modal-container">
+            <div class="modal-header">
+                <h2>Seleccionar Técnicos</h2>
+                <button class="modal-close-btn" data-modal-id="tecnico-select-modal">×</button>
+            </div>
+            <div class="modal-content">
+                <div id="tecnico-list"></div>
+            </div>
+            <div class="modal-footer">
+                <button id="tecnico-modal-cancelar-btn">Cancelar</button>
+                <button id="tecnico-modal-guardar-btn" style="background-color: var(--success);">Confirmar Selección</button>
+            </div>
+        </div>
+    </div>
 
-    // Si presionas el botón "Siguiente", carga los siguientes 50
-    if (paginaSiguiente && ultimoDocVisible) {
-        consulta = query(referencia, orderBy("timestamp", "desc"), startAfter(ultimoDocVisible), limit(50));
-    }
+    <div class="modal-overlay" id="bulk-add-modal">
+        <div class="modal-container">
+            <div class="modal-header">
+                <h2>Agregar Servicios por Copiar y Pegar</h2>
+                <button class="modal-close-btn" data-modal-id="bulk-add-modal">×</button>
+            </div>
+            <div class="modal-content">
+                <label for="bulk-paste-area">Pega aquí los datos desde tu planilla (Excel, Google Sheets)</label>
+                <p style="font-size: 0.85rem; color: var(--text-secondary); margin-top: -0.5rem; margin-bottom: 1rem;">
+                    Asegúrate de que las columnas estén en el siguiente orden: <br>
+                    <strong>Nº Req</strong> | <strong>Nº NV</strong> | <strong>Cliente</strong> | <strong>Monto Servicio</strong> | <strong>Tipo Servicio</strong> | <strong>Vendedor (email)</strong> | <strong>Fecha Asignada</strong> | <strong>H. Traslado</strong> | <strong>H. Inicio</strong> | <strong>H. Termino</strong> | <strong>Técnico(s)</strong> | <strong>Info. Servicio</strong>
+                </p>
+                <textarea id="bulk-paste-area" rows="10" placeholder="Columna 1	Columna 2	Columna 3	..."></textarea>
+            </div>
+            <div class="modal-footer">
+                <button id="bulk-add-save-btn" style="background-color: var(--success);">Procesar y Guardar Servicios</button>
+            </div>
+        </div>
+    </div>
 
-    onSnapshot(consulta, (snapshot) => {
-        const datos = [];
-        // Guardamos el último documento de esta tanda para usarlo de punto de partida en la página siguiente
-        ultimoDocVisible = snapshot.docs[snapshot.docs.length - 1];
-        
-        snapshot.forEach((doc) => {
-            datos.push({ id: doc.id, ...doc.data() });
-        });
-        
-        renderizarTabla(datos);
-    });
-}
+    <script type="module" src="app.js"></script>
 
-// Iniciar la plataforma
-// ELIMINA O COMENTA ESTA LÍNEA:
-// cargarRequerimientos();
-
-// AGREGAR ESTE BLOQUE:
-// Escuchar cambios en la autenticación del usuario
-onAuthStateChanged(auth, (user) => {
-    if (user) {
-        // El usuario inició sesión correctamente
-        console.log("Usuario autenticado:", user.email);
-        
-        // 1. Ocultar el login y mostrar el panel de control
-        document.getElementById('login-container').style.display = 'none';
-        document.getElementById('main-content').style.display = 'block';
-        
-        // 2. AHORA SÍ, cargar los datos porque ya tenemos permiso
-        cargarRequerimientos();
-    } else {
-        // No hay usuario logueado o cerró sesión
-        console.log("Esperando inicio de sesión...");
-        document.getElementById('login-container').style.display = 'block';
-        document.getElementById('main-content').style.display = 'none';
-    }
-});
+</body>
+</html>
