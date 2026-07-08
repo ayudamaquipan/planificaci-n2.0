@@ -109,4 +109,26 @@ function cargarRequerimientos(paginaSiguiente = false) {
 }
 
 // Iniciar la plataforma
-cargarRequerimientos();
+// ELIMINA O COMENTA ESTA LÍNEA:
+// cargarRequerimientos();
+
+// AGREGAR ESTE BLOQUE:
+// Escuchar cambios en la autenticación del usuario
+onAuthStateChanged(auth, (user) => {
+    if (user) {
+        // El usuario inició sesión correctamente
+        console.log("Usuario autenticado:", user.email);
+        
+        // 1. Ocultar el login y mostrar el panel de control
+        document.getElementById('login-container').style.display = 'none';
+        document.getElementById('main-content').style.display = 'block';
+        
+        // 2. AHORA SÍ, cargar los datos porque ya tenemos permiso
+        cargarRequerimientos();
+    } else {
+        // No hay usuario logueado o cerró sesión
+        console.log("Esperando inicio de sesión...");
+        document.getElementById('login-container').style.display = 'block';
+        document.getElementById('main-content').style.display = 'none';
+    }
+});
