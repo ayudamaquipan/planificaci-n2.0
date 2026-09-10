@@ -879,21 +879,20 @@ td select.status-Servicio-incompleto { border-color: #f7768e; /* O puedes usar v
             }
         });
 
-        // MEJORA: SE AGREGÓ limit(100) PARA ACELERAR LA CARGA DE LA TABLA
         function iniciarListenerServicios() {
-            ui.tablaServiciosBody.innerHTML = `<tr><td colspan="14" style="text-align: center;">Cargando servicios...</td></tr>`;
-            unsubscribeServicios = db.collection('servicios')
-                .orderBy('timestamp', 'desc')
-                .limit(100) // <- AQUÍ ESTÁ LA MAGIA DE LA VELOCIDAD
-                .onSnapshot(snapshot => {
-                    state.serviciosCache = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    populateVendedorFilter(); populateTipoServicioFilter(); populateEstadoFilter();
-                    applyFiltersAndRender();
-            }, error => {
-                console.error("Error al escuchar servicios:", error);
-                ui.tablaServiciosBody.innerHTML = `<tr><td colspan="14" style="text-align: center; color: var(--danger);">Error al cargar datos.</td></tr>`;
-            });
-        }
+    ui.tablaServiciosBody.innerHTML = `<tr><td colspan="14" style="text-align: center;">Cargando servicios...</td></tr>`;
+    unsubscribeServicios = db.collection('servicios')
+        .orderBy('timestamp', 'desc')
+        // Se eliminó .limit(100) para poder buscar en todo el historial
+        .onSnapshot(snapshot => {
+            state.serviciosCache = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            populateVendedorFilter(); populateTipoServicioFilter(); populateEstadoFilter();
+            applyFiltersAndRender();
+    }, error => {
+        console.error("Error al escuchar servicios:", error);
+        ui.tablaServiciosBody.innerHTML = `<tr><td colspan="14" style="text-align: center; color: var(--danger);">Error al cargar datos.</td></tr>`;
+    });
+}
 
         function populateVendedorFilter() {
             const vendedores = [...new Set(state.serviciosCache.map(s => s.vendedor).filter(Boolean))].sort();
@@ -935,10 +934,10 @@ td select.status-Servicio-incompleto { border-color: #f7768e; /* O puedes usar v
                 const matchVendedor = vendedorFilter === 'todos' || s.vendedor === vendedorFilter;
                 const matchTipoServicio = tipoServicioFilter === 'todos' || s.tipoServicio === tipoServicioFilter;
                 const matchSearch = searchTerm === '' ||
-                                    (s.numRequerimiento?.toLowerCase().includes(searchTerm)) ||
-                                    (s.numNV?.toLowerCase().includes(searchTerm)) ||
-                                    (s.cliente?.toLowerCase().includes(searchTerm)) ||
-                                    (s.vendedor?.toLowerCase().includes(searchTerm));
+                    (String(s.numRequerimiento || '').toLowerCase().includes(searchTerm)) ||
+                    (String(s.numNV || '').toLowerCase().includes(searchTerm)) ||
+                    (String(s.cliente || '').toLowerCase().includes(searchTerm)) ||
+                    (String(s.vendedor || '').toLowerCase().includes(searchTerm));
                 let matchTecnico = true;
                 if (tecnicoFilter !== 'todos') { matchTecnico = (s.tecnicos || []).includes(tecnicoFilter); }
                 return matchEstado && matchVendedor && matchTipoServicio && matchSearch && matchTecnico;
@@ -987,11 +986,9 @@ td select.status-Servicio-incompleto { border-color: #f7768e; /* O puedes usar v
                 if (s.notificacionPara === 'planificador') tr.classList.add('fila-notificacion');
 
                 let reqContent = 'N/A';
-                if (s.numRequerimiento && s.numRequerimiento.startsWith('15')) {
-                    reqContent = `<a href="https://app.fixeat.cl/maquipan/services?tableSearch=${s.numRequerimiento}" target="_blank" class="req-link">${s.numRequerimiento}</a>`;
-                } else if (s.numRequerimiento) {
-                    reqContent = `<a href="http://st.maquipanst.com/maquipan/st2/admin.php?mod=ficha_tecnico&req=${s.numRequerimiento}" target="_blank" class="req-link">${s.numRequerimiento}</a>`;
-                }
+if (s.numRequerimiento) {
+    reqContent = `<a href="https://app.fixeat.cl/maquipan/services?tableSearch=${s.numRequerimiento}" target="_blank" class="req-link">${s.numRequerimiento}</a>`;
+}
 
                 let direccionCompleta = s.direccion || '';
                 if (s.comuna) direccionCompleta += `, ${s.comuna}`;
